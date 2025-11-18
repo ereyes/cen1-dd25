@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Pluie de Mots Sous-Marine</title>
+    <style>
+        /* Style de base pour le corps et la mise en page */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(to bottom, #001f3f, #005f7f); /* Fond bleu dégradé pour l'océan */
+            color: #f0f0f0;
+            overflow: hidden; /* Cache la barre de défilement */
+            height: 100vh;
+        }
+
+        /* Conteneur pour la zone de saisie et le bouton */
+        #controls {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000; /* Assure que les contrôles sont au-dessus de la "nage" */
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border-radius: 5px;
+        }
+
+        /* Style du champ de texte */
+        #textInput {
+            width: 500px;
+            height: 150px;
+            padding: 10px;
+            border: 1px solid #555;
+            background-color: #333;
+            color: #fff;
+            resize: vertical;
+        }
+
+        /* Style du bouton */
+        #goButton {
+            padding: 10px 20px;
+            border: none;
+            background-color: #007bff; /* Bleu pour 'Go' */
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+
+        #goButton:hover {
+            background-color: #0056b3;
+        }
+
+        /* Style pour les mots qui "nagent" */
+        .swimming-word {
+            position: absolute;
+            top: 0;
+            left: 0;
+            white-space: nowrap; /* Empêche les mots de se couper */
+            pointer-events: none; /* Permet de cliquer à travers les mots */
+            color: rgba(200, 200, 200, 0.9); /* Gris clair par défaut */
+            font-size: 20px;
+            opacity: 0.8;
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.3); /* Effet de lueur sous-marine */
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <textarea id="textInput" placeholder="Collez votre roman sur les sous-marins ici..."></textarea>
+        <button id="goButton">PLONGER !</button>
+    </div>
+
+    <div id="wordSwim">
+        </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const textInput = document.getElementById('textInput');
+            const goButton = document.getElementById('goButton');
+            const wordSwimContainer = document.getElementById('wordSwim');
+
+            // --- Logique du Bouton et Préparation des Mots ---
+            goButton.addEventListener('click', () => {
+                const text = textInput.value;
+                const words = text.match(/\b[\w']+\b/g);
+
+                if (words && words.length > 0) {
+                    // Supprimer tous les mots précédemment créés
+                    wordSwimContainer.innerHTML = '';
+                    
+                    // Lancer la nage des mots !
+                    startWordSwim(words);
+
+                    // Optionnel : masquer les contrôles après le lancement
+                    // document.getElementById('controls').style.display = 'none';
+
+                } else {
+                    alert('Veuillez coller un texte contenant des mots pour la nage sous-marine.');
+                }
+            });
+
+            // --- Fonction Principale d'Animation ---
+            function startWordSwim(words) {
+                const screenWidth = window.innerWidth;
+                const screenHeight = window.innerHeight;
+                let wordIndex = 0;
+
+                // Fonction pour obtenir une couleur de gris entre clair et blanc
+                function getRandomGrayColor() {
+                    const shade = Math.floor(Math.random() * 50) + 200; // Entre 200 et 249
+                    return `rgb(${shade}, ${shade}, ${shade})`;
+                }
+
+                // Créer et animer un mot
+                function createAndAnimateWord() {
+                    if (wordIndex >= words.length) {
+                        wordIndex = 0; // Recommencer la boucle une fois que tous les mots sont affichés
+                    }
+
+                    const wordText = words[wordIndex];
+                    const wordElement = document.createElement('div');
+                    wordElement.className = 'swimming-word';
+                    wordElement.textContent = wordText;
+
+                    // Attribuer une couleur aléatoire (gris clair/blanc)
+                    wordElement.style.color = getRandomGrayColor();
+
+                    // Positionnement initial aléatoire sur l'axe Y, sortant de gauche
+                    const startY = Math.random() * (screenHeight - 50); // -50 pour éviter le débordement
+                    wordElement.style.top = `${startY}px`;
+                    wordElement.style.left = `-200px`; // Commence bien en dehors de l'écran à gauche
+
+                    // Vitesse et légère oscillation verticale aléatoires
+                    const duration = Math.random() * 10 + 10; // 10 à 20 secondes pour traverser
+                    const delay = Math.random() * 5; // Délai de 0 à 5 secondes
+                    const verticalOscillation = Math.random() * 50 - 25; // Oscillation de -25px à +25px
+
+                    // Taille de police légèrement variable pour un effet de profondeur
+                    const fontSize = Math.random() * 8 + 18; // 18px à 26px
+                    wordElement.style.fontSize = `${fontSize}px`;
+
+
+                    // Ajouter le mot au conteneur
+                    wordSwimContainer.appendChild(wordElement);
+                    
+                    // Utiliser l'API Web Animations pour l'animation
+                    const animation = wordElement.animate([
+                        { 
+                            transform: `translateX(0px) translateY(0px)`, 
+                            opacity: 0.8
+                        },
+                        { 
+                            transform: `translateX(${screenWidth + 200}px) translateY(${verticalOscillation}px)`, 
+                            opacity: 0.2
+                        }
+                    ], {
+                        duration: duration * 1000,
+                        easing: 'linear', // Mouvement constant
+                        delay: delay * 1000,
+                        fill: 'forwards'
+                    });
+
+                    // Quand l'animation est terminée, supprimer le mot
+                    animation.onfinish = () => {
+                        wordElement.remove();
+                    };
+
+                    wordIndex++;
+                }
+
+                // Générer un nouveau mot à intervalles réguliers
+                const swimInterval = setInterval(() => {
+                    if (!words || words.length === 0) {
+                        clearInterval(swimInterval);
+                        return;
+                    }
+                    createAndAnimateWord();
+                }, 200); // Crée un nouveau mot toutes les 200 millisecondes (ajustez ce chiffre)
+
+                // Optionnel : Arrêter l'intervalle après un certain temps pour éviter une surcharge
+                // setTimeout(() => {
+                //     clearInterval(swimInterval);
+                // }, 120000); // Arrête après 2 minutes
+            }
+        });
+    </script>
+
+</body>
+</html>

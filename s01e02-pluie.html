@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Pluie de Mots</title>
+    <style>
+        /* Style de base pour le corps et la mise en page */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a; /* Fond sombre pour un meilleur contraste */
+            color: #f0f0f0;
+            overflow: hidden; /* Cache la barre de défilement */
+            height: 100vh;
+        }
+
+        /* Conteneur pour la zone de saisie et le bouton */
+        #controls {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000; /* Assure que les contrôles sont au-dessus de la pluie */
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border-radius: 5px;
+        }
+
+        /* Style du champ de texte */
+        #textInput {
+            width: 500px;
+            height: 150px;
+            padding: 10px;
+            border: 1px solid #555;
+            background-color: #333;
+            color: #fff;
+            resize: vertical;
+        }
+
+        /* Style du bouton */
+        #goButton {
+            padding: 10px 20px;
+            border: none;
+            background-color: #4CAF50; /* Vert pour 'Go' */
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+
+        #goButton:hover {
+            background-color: #45a049;
+        }
+
+        /* Style pour les mots qui tombent */
+        .falling-word {
+            position: absolute;
+            top: 0;
+            left: 0;
+            white-space: nowrap; /* Empêche les mots de se couper */
+            pointer-events: none; /* Permet de cliquer à travers les mots */
+            color: #00ff00; /* Couleur 'Matrix' */
+            font-size: 18px;
+            opacity: 0.8;
+            text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <textarea id="textInput" placeholder="Collez votre roman complet ici..."></textarea>
+        <button id="goButton">GO</button>
+    </div>
+
+    <div id="wordRain">
+        </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const textInput = document.getElementById('textInput');
+            const goButton = document.getElementById('goButton');
+            const wordRainContainer = document.getElementById('wordRain');
+
+            // --- Logique du Bouton et Préparation des Mots ---
+            goButton.addEventListener('click', () => {
+                const text = textInput.value;
+                // Sépare le texte en mots. Utilise une expression régulière pour inclure
+                // les mots avec des apostrophes, et exclure les espaces multiples,
+                // les ponctuations isolées, etc.
+                const words = text.match(/\b[\w']+\b/g);
+
+                if (words && words.length > 0) {
+                    // Supprimer tous les mots précédemment créés
+                    wordRainContainer.innerHTML = '';
+                    
+                    // Lancer la pluie !
+                    startWordRain(words);
+
+                    // Optionnel : masquer les contrôles après le lancement
+                    // document.getElementById('controls').style.display = 'none';
+
+                } else {
+                    alert('Veuillez coller un texte contenant des mots.');
+                }
+            });
+
+            // --- Fonction Principale d'Animation ---
+            function startWordRain(words) {
+                const screenWidth = window.innerWidth;
+                const screenHeight = window.innerHeight;
+                let wordIndex = 0;
+
+                // Créer et animer un mot
+                function createAndAnimateWord() {
+                    if (wordIndex >= words.length) {
+                        wordIndex = 0; // Recommencer la boucle une fois que tous les mots sont tombés
+                    }
+
+                    const wordText = words[wordIndex];
+                    const wordElement = document.createElement('div');
+                    wordElement.className = 'falling-word';
+                    wordElement.textContent = wordText;
+
+                    // Positionnement initial aléatoire
+                    const startX = Math.random() * (screenWidth - 100); // -100 pour éviter le débordement
+                    wordElement.style.left = `${startX}px`;
+
+                    // Vitesse et rotation aléatoires
+                    const duration = Math.random() * 5 + 5; // 5 à 10 secondes
+                    const delay = Math.random() * 3; // Délai de 0 à 3 secondes
+                    const rotation = Math.random() * 60 - 30; // -30 à +30 degrés
+
+                    // Ajouter le mot au conteneur
+                    wordRainContainer.appendChild(wordElement);
+                    
+                    // Utiliser l'API Web Animations pour l'animation
+                    const animation = wordElement.animate([
+                        { 
+                            transform: `translateY(0) rotate(0deg)`, 
+                            opacity: 0.8
+                        },
+                        { 
+                            transform: `translateY(${screenHeight + 50}px) rotate(${rotation}deg)`, 
+                            opacity: 0.1
+                        }
+                    ], {
+                        duration: duration * 1000,
+                        easing: 'linear',
+                        delay: delay * 1000,
+                        fill: 'forwards'
+                    });
+
+                    // Quand l'animation est terminée, supprimer le mot et en créer un nouveau
+                    animation.onfinish = () => {
+                        wordElement.remove();
+                    };
+
+                    wordIndex++;
+                }
+
+                // Générer un nouveau mot à intervalles réguliers
+                // Plus l'intervalle est petit, plus la pluie est dense.
+                const rainInterval = setInterval(() => {
+                    // Si la zone de texte est vide, arrêtez l'intervalle
+                    if (!words || words.length === 0) {
+                        clearInterval(rainInterval);
+                        return;
+                    }
+                    createAndAnimateWord();
+                }, 100); // Crée un nouveau mot toutes les 100 millisecondes (ajustez ce chiffre)
+
+                // Optionnel : Arrêter l'intervalle après un certain temps pour éviter une surcharge
+                // setTimeout(() => {
+                //     clearInterval(rainInterval);
+                // }, 60000); 
+            }
+        });
+    </script>
+
+</body>
+</html>
