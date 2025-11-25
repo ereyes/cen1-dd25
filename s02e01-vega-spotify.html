@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.jsdelivr.net/npm/vega@6.2.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-lite@6.4.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-embed@7.1.0"></script>
+</head>
+<body>
+  <div id="vis"/>
+  <script>
+    const spec = {
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "description": "Les morceaux le plus streamés sur Spotify.",
+  "data": {
+    "url": "https://raw.githubusercontent.com/ereyes/cen1-dd25/refs/heads/main/songs_spotify.json"
+  },
+  "mark": "point",
+  "transform": [
+    {
+      "calculate": "'https://open.spotify.com/track/' + datum.track_id",
+      "as": "url"
+    }
+  ],
+  "encoding": {
+    "x": {"field": "duration_ms", "type": "quantitative"},
+    "y": {"field": "danceability", "type": "quantitative"},
+    "color": {"field": "playlist_genre", "type": "nominal"},
+    "tooltip": {"field": "artist_name", "type": "nominal"},
+    "href": {"field": "spotify_url", "type": "nominal"}
+  },
+  "config": {}
+};
+    vegaEmbed("#vis", spec, {mode: "vega-lite"}).then(console.log).catch(console.warn);
+  </script>
+</body>
+</html>
