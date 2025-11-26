@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CSV to Circles – All Data Visible</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #111;
+      color: #eee;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+                   Roboto, sans-serif;
+    }
+    canvas {
+      display: block;
+    }
+    a {
+      color: #4fd1ff;
+    }
+  </style>
+</head>
+<body>
+<script>
+  let canvas;
+  let rowsData = [];
+  let circles = [];
+
+  let uniqueGenres = [];
+  let genreCounts = {};
+  let genreLayout = {};      // genre -> {x0, y0, w, h, count}
+  let genreColors = {};
+  let nextHue = 0;
+
+  const MIN_DIAMETER = 3;
+  const MAX_DIAMETER = 14;
+
+  let tooltipDiv;
+  let selectedCircle = null;
+
+  function setup() {
+    canvas = createCanvas(windowWidth, windowHeight);
+    canvas.drop(handleFile);
+    colorMode(HSB, 360, 100, 100, 100);
+
+    // Tooltip
+    tooltipDiv = createDiv("");
+    tooltipDiv.style("position", "fixed");
+    tooltipDiv.style("background", "rgba(0,0,0,0.85)");
+    tooltipDiv.style("color", "#fff");
+    tooltipDiv.style("padding", "8px 10px");
+    tooltipDiv.style("border-radius", "6px");
+    tooltipDiv.style("font-size", "12px");
+    tooltipDiv.style("max-width", "260px");
+    tooltipDiv.style("pointer-events", "auto");
+    tooltipDiv.style("display", "none");
+    tooltipDiv.style("z-index", "10");
+  }
+
+  function draw() {
+    background(0);
+
+    if (circles.length === 0) {
+      fill(0, 0, 90);
+      textAlign(CENTER, CENTER);
+      textSize(24);
+      text("Drop a CSV file onto the screen", width / 2, height / 2 - 20);
+      textSize(14);
+      text("Each row = one circle (genre color, danceability size)", width / 2, height / 2 + 10);
+      return;
+    }
+
+    // Semi-transparent lines to show genre tiles (optional, for orientation)
+    stroke(0, 0, 40, 40);
+    strokeWeight(1);
+    noFill();
+    for (const g of uniqueGenres) {
+      const layout = genreLayout[g];
+      if (!layout) continue;
+      rect(layout.x0, layout.y0, layout.w, layout.h);
+    }
+
+    noStroke();
+    for (let c of circles) {
+      updatePhysics(c);
+      fill(c.h, 80, 90, 80);
+      circle(c.x, c.y, c.d);
+    }
+
+    // Info overlay (top-left)
+    fill(0, 0, 100, 80);
+    textAlign(LEFT, TOP);
+    textSize(12);
+    text(`Rows: ${rowsData.length}  |  Circles: ${circles.length}  |  Genres: ${uniqueGenres.length}`, 10, 10);
+  }
+
+  function windowResized() {
+    resizeCanvas(windowWidth, windowHeight);
+    if (rowsData.length > 0) {
+      computeGenreLayout();
+      generateCirclesFromData();
+      selectedCircle = null;
+      tooltipDiv.style("display", "none");
+    }
+  }
+
+  function handleFile(file) {
+    if (file.type === 'text') {
+      parseCSV(file.data);
+    } else {
+      console.log("Not a text file");
+    }
+  }
+
+  function parseCSV(csvText) {
+    const firstLine = csvText.split(/\r?\n/)[0];
+    const delimiter =
+      firstLine.split(";").length > firstLine.split(",").length ? ";" : ",";
+
+    const lines = csvText
+      .trim()
+      .split(/\r?\n/)
+      .filter(l => l.trim().length > 0);
+
+    if (lines.length < 2) {
+      console.warn("CSV seems to have no data.");
+      return;
+    }
+
+    const headers = lines[0].split(delimiter).map(h => h.trim());
+
+    const genreIndex = headers.indexOf("playlist_genre");
+    const danceIndex = headers.indexOf("danceability");
+    const artistIndex = headers.indexOf("artist_name");
+    const trackIndex = headers.indexOf("track_name");
+    const urlIndex = headers.indexOf("spotify_url");
+
+    if (genreIndex === -1 || danceIndex === -1) {
+      console.warn("CSV must contain playlist_genre and danceability columns.");
+      return;
+    }
+
+    rowsData = [];
+    genreCounts = {};
+    uniqueGenres = [];
+    genreLayout = {};
+    genreColors = {};
+    nextHue = 0;
+    selectedCircle = null;
+    tooltipDiv.style("display", "none");
+
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(delimiter);
+      if (parts.length < headers.length) continue;
+
+      const genre = (parts[genreIndex] || "").trim() || "Unknown";
+      let dance = parseFloat((parts[danceIndex] || "").trim());
+      if (isNaN(dance)) dance = 0.5;
+      dance = constrain(dance, 0, 1);
+
+      const artist = artistIndex !== -1 ? (parts[artistIndex] || "").trim() : "";
+      const track = trackIndex !== -1 ? (parts[trackIndex] || "").trim() : "";
+      const url   = urlIndex   !== -1 ? (parts[urlIndex]   || "").trim() : "";
+
+      rowsData.push({ genre, dance, artist, track, url });
+
+      if (!genreCounts[genre]) {
+        genreCounts[genre] = 0;
+      }
+      genreCounts[genre]++;
+    }
+
+    uniqueGenres = Object.keys(genreCounts);
+    computeGenreLayout();
+    generateCirclesFromData();
+  }
+
+  function computeGenreLayout() {
+    genreLayout = {};
+    const gCount = uniqueGenres.length;
+    if (gCount === 0) return;
+
+    const clusterCols = ceil(sqrt(gCount));
+    const clusterRows = ceil(gCount / clusterCols);
+
+    const cellW = width / clusterCols;
+    const cellH = height / clusterRows;
+
+    for (let i = 0; i < gCount; i++) {
+      const g = uniqueGenres[i];
+      const col = i % clusterCols;
+      const row = floor(i / clusterCols);
+      const x0 = col * cellW;
+      const y0 = row * cellH;
+      genreLayout[g] = {
+        x0,
+        y0,
+        w: cellW,
+        h: cellH,
+        count: genreCounts[g]
+      };
+    }
+  }
+
+  function getHueForGenre(genre) {
+    const key = genre || "Unknown";
+    if (!(key in genreColors)) {
+      genreColors[key] = nextHue;
+      nextHue = (nextHue + 40) % 360;
+    }
+    return genreColors[key];
+  }
+
+  function generateCirclesFromData() {
+    circles = [];
+    const perGenreIndex = {};
+
+    for (const row of rowsData) {
+      const g = row.genre || "Unknown";
+      const layout = genreLayout[g];
+      if (!layout) continue;
+
+      if (!(g in perGenreIndex)) {
+        perGenreIndex[g] = 0;
+      }
+      const idx = perGenreIndex[g]++;
+      const count = layout.count;
+
+      // local grid inside each genre tile
+      const cols = ceil(sqrt(count));
+      const rows = ceil(count / cols);
+
+      const colIndex = idx % cols;
+      const rowIndex = floor(idx / cols);
+
+      const cellW = layout.w / cols;
+      const cellH = layout.h / rows;
+
+      const maxCellDiameter = min(cellW, cellH) * 0.8;
+      const baseDiameter = map(row.dance, 0, 1, MIN_DIAMETER, MAX_DIAMETER);
+      const d = min(baseDiameter, maxCellDiameter);
+
+      const cx = layout.x0 + (colIndex + 0.5) * cellW;
+      const cy = layout.y0 + (rowIndex + 0.5) * cellH;
+
+      const h = getHueForGenre(g);
+
+      circles.push({
+        x: cx,
+        y: cy,
+        vx: 0,
+        vy: 0,
+        d,
+        h,
+        genre: g,
+        targetX: cx,
+        targetY: cy,
+        artist: row.artist,
+        track: row.track,
+        url: row.url
+      });
+    }
+  }
+
+  function updatePhysics(c) {
+    let ax = 0;
+    let ay = 0;
+
+    // Spring back to its grid position
+    const k = 0.05;
+    ax += (c.targetX - c.x) * k;
+    ay += (c.targetY - c.y) * k;
+
+    // Repulsion from mouse
+    if (mouseX >= 0 && mouseX <= width && mouseY >= 0 && mouseY <= height) {
+      const dx = c.x - mouseX;
+      const dy = c.y - mouseY;
+      const distSq = dx * dx + dy * dy;
+      const minDist = 80;
+
+      if (distSq < minDist * minDist && distSq > 1) {
+        const dist = sqrt(distSq);
+        const force = 200 / (distSq + 50);
+        ax += (dx / dist) * force;
+        ay += (dy / dist) * force;
+      }
+    }
+
+    // Velocity + damping
+    c.vx = (c.vx + ax) * 0.85;
+    c.vy = (c.vy + ay) * 0.85;
+
+    c.x += c.vx;
+    c.y += c.vy;
+
+    // Keep inside canvas
+    const r = c.d / 2;
+    if (c.x < r) {
+      c.x = r;
+      c.vx *= -0.5;
+    } else if (c.x > width - r) {
+      c.x = width - r;
+      c.vx *= -0.5;
+    }
+    if (c.y < r) {
+      c.y = r;
+      c.vy *= -0.5;
+    } else if (c.y > height - r) {
+      c.y = height - r;
+      c.vy *= -0.5;
+    }
+  }
+
+  function mousePressed() {
+    if (!circles.length) return;
+
+    let clicked = null;
+    let bestDist = Infinity;
+
+    for (let c of circles) {
+      const d = dist(mouseX, mouseY, c.x, c.y);
+      if (d <= c.d / 2 && d < bestDist) {
+        bestDist = d;
+        clicked = c;
+      }
+    }
+
+    if (clicked) {
+      selectedCircle = clicked;
+      updateTooltip(clicked);
+    } else {
+      selectedCircle = null;
+      tooltipDiv.style("display", "none");
+    }
+  }
+
+  function updateTooltip(c) {
+    const safeArtist = escapeHTML(c.artist || "Unknown artist");
+    const safeTrack = escapeHTML(c.track || "Unknown track");
+    const safeUrl   = c.url ? escapeHTML(c.url) : "";
+
+    let html = `<strong>${safeArtist}</strong><br>${safeTrack}`;
+    if (safeUrl) {
+      html += `<br><a href="${safeUrl}" target="_blank" rel="noopener noreferrer">Open in Spotify</a>`;
+    }
+
+    tooltipDiv.html(html);
+
+    const offsetX = 16;
+    const offsetY = 16;
+    let left = c.x + offsetX;
+    let top  = c.y + offsetY;
+
+    left = constrain(left, 10, windowWidth - 270);
+    top  = constrain(top, 10, windowHeight - 100);
+
+    tooltipDiv.style("left", left + "px");
+    tooltipDiv.style("top", top + "px");
+    tooltipDiv.style("display", "block");
+  }
+
+  function escapeHTML(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Random Circles Fullscreen with p5.js</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- p5.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden; /* avoid scrollbars */
+    }
+    canvas {
+      display: block; /* remove inline gaps */
+    }
+  </style>
+</head>
+<body>
+<script>
+  let circles = [];
+  const NUM_CIRCLES = 100;
+
+  function setup() {
+    createCanvas(windowWidth, windowHeight);
+    generateCircles();
+    noLoop(); // draw only when needed (setup / resize)
+  }
+
+  function draw() {
+    background(255); // white background
+    noStroke();
+    for (let c of circles) {
+      fill(c.col);
+      circle(c.x, c.y, c.d);
+    }
+  }
+
+  function windowResized() {
+    resizeCanvas(windowWidth, windowHeight);
+    generateCircles();
+    redraw(); // re-draw once after resize
+  }
+
+  function generateCircles() {
+    circles = [];
+    for (let i = 0; i < NUM_CIRCLES; i++) {
+      const d = random(20, 100); // random diameter
+      const x = random(d / 2, width - d / 2);
+      const y = random(d / 2, height - d / 2);
+      const col = color(random(255), random(255), random(255), 180); // semi-transparent random color
+      circles.push({ x, y, d, col });
+    }
+  }
+</script>
+</body>
+</html>

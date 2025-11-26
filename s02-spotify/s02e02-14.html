@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Spotify 900</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100%;
+      background: radial-gradient(circle at center, #000000 0%, #333333 100%);
+      color: #eee;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont,
+                   "Segoe UI", Roboto, sans-serif;
+    }
+
+    canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      display: block;
+    }
+
+    /* Top-left title + controls */
+    #title-bar {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      pointer-events: auto;
+    }
+
+    #title-bar .title {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    #title-bar .subtitle {
+      font-size: 12px;
+      opacity: 0.8;
+    }
+
+    #title-bar label {
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #sizeMetricSelect {
+      background: rgba(0, 0, 0, 0.6);
+      color: #eee;
+      border: 1px solid #555;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 12px;
+      outline: none;
+    }
+
+    #infoButton {
+      margin-top: 2px;
+      align-self: flex-start;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid #555;
+      background: rgba(0, 0, 0, 0.7);
+      color: #eee;
+      cursor: pointer;
+    }
+
+    #infoButton:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    /* Bottom-right year slider */
+    #year-control {
+      position: fixed;
+      right: 10px;
+      bottom: 10px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+
+    #year-control label {
+      font-size: 12px;
+    }
+
+    #yearRange {
+      width: 180px;
+    }
+
+    #yearRange:disabled {
+      opacity: 0.4;
+    }
+
+    /* Centered info overlay */
+    #infoOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: none;           /* toggled with .active */
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.65);
+    }
+
+    #infoOverlay.active {
+      display: flex;
+    }
+
+    #infoOverlay .info-content {
+      max-width: 520px;
+      padding: 24px 28px;
+      border-radius: 10px;
+      background: rgba(10, 10, 10, 0.92);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+    }
+
+    #infoOverlay .info-content h2 {
+      margin: 0 0 10px;
+      font-size: 20px;
+    }
+
+    #infoOverlay .info-content p {
+      margin: 0 0 6px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    #infoClose {
+      margin-top: 16px;
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid #777;
+      background: transparent;
+      color: #eee;
+      cursor: pointer;
+    }
+
+    #infoClose:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+  </style>
+</head>
+<body>
+  <!-- Top-left title and controls -->
+  <div id="title-bar">
+    <div class="title">Spotify 900</div>
+    <div class="subtitle">Genre clouds · Pulse = tempo</div>
+    <button id="infoButton" type="button">what is this</button>
+    <label for="sizeMetricSelect">
+      Circle size:
+      <select id="sizeMetricSelect">
+        <option value="danceability">danceability</option>
+        <option value="loudness">loudness</option>
+        <option value="speechiness">speechiness</option>
+        <option value="acousticness">acousticness</option>
+        <option value="liveness">liveness</option>
+        <option value="valence">valence</option>
+        <option value="tempo">tempo</option>
+        <option value="duration_ms">duration_ms</option>
+      </select>
+    </label>
+  </div>
+
+  <!-- Bottom-right year slider -->
+  <div id="year-control">
+    <label for="yearRange">
+      Year: <span id="yearLabel">All years</span>
+    </label>
+    <input type="range" id="yearRange" min="0" max="0" value="0" disabled />
+  </div>
+
+  <!-- Project info overlay (edit this text to describe the project) -->
+  <div id="infoOverlay">
+    <div class="info-content">
+      <h2>Spotify 900 – what is this?</h2>
+      <p>
+        This is a visualization of ~900 tracks from Spotify. Each circle is a track:
+      </p>
+      <p>
+        • Color = playlist_genre<br/>
+        • Size = chosen audio feature (dropdown on the top-left)<br/>
+        • Pulse speed = tempo<br/>
+        • Position = clustered by genre into a big cloud
+      </p>
+      <p>
+        You can drag &amp; drop a CSV file onto the screen to update the data.
+        Replace this text with your own project description.
+      </p>
+      <button id="infoClose" type="button">Close</button>
+    </div>
+  </div>
+
+<script>
+  let canvas;
+  let rowsData = [];
+  let circles = [];
+  let hoveredIndex = -1;
+
+  // Circle size normalized to min(width, height)
+  const MIN_SIZE_NORM = 0.004;  // ~4px at 1000px
+  const MAX_SIZE_NORM = 0.02;   // ~20px at 1000px
+
+  // Normalized margins and spacing
+  const MARGIN_NORM = 0.06;
+  const CUSHION_NORM = 0.0015;
+  const CENTER_PULL = 0.03;
+
+  // Size metrics
+  const SIZE_FIELDS = [
+    "danceability",
+    "loudness",
+    "speechiness",
+    "acousticness",
+    "liveness",
+    "valence",
+    "tempo",
+    "duration_ms"
+  ];
+  let sizeMetric = "danceability";
+  let sizeStats = {}; // field -> {min, max, available}
+
+  // Tempo range (for pulsing)
+  let tempoMin = 0;
+  let tempoMax = 1;
+
+  // Year filter from track_album_release_date
+  let yearMin = null;
+  let yearMax = null;
+  let yearFilter = null; // null = show all
+
+  // Fixed genre colors
+  const GENRE_STYLES = {
+    "Pop":  { h: 330, s: 80, b: 100 }, // pink
+    "Rap":  { h: 30,  s: 80, b: 65  }, // brown
+    "Latin":{ h: 50,  s: 90, b: 100 }, // yellow
+    "R&b":  { h: 210, s: 80, b: 100 }, // blue
+    "Rock": { h: 0,   s: 90, b: 100 }, // red
+    "Edm":  { h: 0,   s: 0,  b: 70  }  // gray
+  };
+
+  const LEGEND_ORDER = ["Pop", "Rap", "Latin", "R&b", "Rock", "Edm"];
+
+  // Count per genre (for legend + cluster sizing)
+  let genreCount = {
+    "Pop": 0,
+    "Rap": 0,
+    "Latin": 0,
+    "R&b": 0,
+    "Rock": 0,
+    "Edm": 0
+  };
+
+  // Layout: genre -> center + spread (normalized)
+  let genreCenters = {};   // { genre: {nx, ny} }
+  let clusterSpread = {};  // { genre: spreadRadius }
+
+  function setup() {
+    canvas = createCanvas(windowWidth, windowHeight);
+    canvas.drop(handleFile);
+    colorMode(HSB, 360, 100, 100, 100);
+
+    // Size metric dropdown
+    const sizeSelect = document.getElementById("sizeMetricSelect");
+    if (sizeSelect) {
+      sizeSelect.value = sizeMetric;
+      sizeSelect.addEventListener("change", (e) => {
+        sizeMetric = e.target.value;
+        updateCircleSizesFromMetric();
+      });
+    }
+
+    // Info overlay button
+    const infoBtn = document.getElementById("infoButton");
+    const infoOverlay = document.getElementById("infoOverlay");
+    const infoClose = document.getElementById("infoClose");
+    if (infoBtn && infoOverlay) {
+      infoBtn.addEventListener("click", () => {
+        infoOverlay.classList.add("active");
+      });
+    }
+    if (infoClose && infoOverlay) {
+      infoClose.addEventListener("click", () => {
+        infoOverlay.classList.remove("active");
+      });
+    }
+    if (infoOverlay) {
+      infoOverlay.addEventListener("click", (e) => {
+        if (e.target === infoOverlay) {
+          infoOverlay.classList.remove("active");
+        }
+      });
+    }
+
+    // Year slider events (values set after CSV is loaded)
+    const yearSlider = document.getElementById("yearRange");
+    const yearLabel  = document.getElementById("yearLabel");
+    if (yearSlider && yearLabel) {
+      yearSlider.addEventListener("input", () => {
+        if (yearMin === null || yearMax === null) return;
+        yearFilter = parseInt(yearSlider.value, 10);
+        if (isNaN(yearFilter)) {
+          yearFilter = null;
+          yearLabel.textContent = "All years";
+        } else {
+          yearLabel.textContent = "≤ " + yearFilter;
+        }
+      });
+    }
+  }
+
+  function draw() {
+    // Clear canvas to transparent so the CSS radial gradient shows through
+    clear();
+
+    if (!circles.length) {
+      drawInstructions();
+      return;
+    }
+
+    const t = millis() / 1000.0;
+    const sizeScale = Math.min(width, height) || 1;
+
+    hoveredIndex = -1;
+    let closestDistSq = Infinity;
+
+    // 1) Compute pixel positions, animated diameter, and hover (only for visible-by-year circles)
+    for (let i = 0; i < circles.length; i++) {
+      const c = circles[i];
+      const row = rowsData[c.rowIndex];
+      if (!passesYearFilter(row)) {
+        c.currentD = 0;
+        continue;
+      }
+
+      c.x = c.nx * width;
+      c.y = c.ny * height;
+
+      const baseD = c.dNorm * sizeScale;
+      const speed = 0.5 + c.tempoNorm * 2.0; // faster tempo => faster pulse
+      const pulse = Math.sin(TWO_PI * speed * t + c.phase);
+      const amp = 0.18;
+      const d = baseD * (1 + amp * pulse);
+
+      c.baseD = baseD;
+      c.currentD = d;
+
+      const dx = mouseX - c.x;
+      const dy = mouseY - c.y;
+      const distSq = dx * dx + dy * dy;
+      const radius = d / 2;
+
+      if (distSq < radius * radius && distSq < closestDistSq) {
+        closestDistSq = distSq;
+        hoveredIndex = i;
+      }
+    }
+
+    // 2) Draw circles (non-hovered first, then hovered on top)
+    noStroke();
+    for (let i = 0; i < circles.length; i++) {
+      if (i === hoveredIndex) continue;
+      const c = circles[i];
+      const row = rowsData[c.rowIndex];
+      if (!passesYearFilter(row)) continue;
+      const d = c.currentD || 0;
+      if (d <= 0) continue;
+      fill(c.h, c.s, c.b, 70);
+      circle(c.x, c.y, d);
+    }
+
+    if (hoveredIndex >= 0) {
+      const c = circles[hoveredIndex];
+      const row = rowsData[c.rowIndex];
+      if (passesYearFilter(row)) {
+        stroke(0, 0, 100, 90);
+        strokeWeight(1.2);
+        fill(c.h, c.s, c.b, 90);
+        circle(c.x, c.y, c.currentD * 1.08);
+        noStroke();
+      }
+      cursor("pointer");
+    } else {
+      cursor("default");
+    }
+
+    drawOverlay();
+    drawLegend();
+    drawTooltip();
+  }
+
+  function drawInstructions() {
+    fill(0, 0, 95);
+    textAlign(CENTER, CENTER);
+    textSize(24);
+    text("Drop a CSV file onto the screen", width / 2, height / 2 - 20);
+    textSize(14);
+    text("Color = playlist_genre · Size = metric · Pulse = tempo",
+         width / 2, height / 2 + 10);
+  }
+
+  function drawOverlay() {
+    const usedGenres = LEGEND_ORDER.filter(g => genreCount[g] > 0);
+    const gCount = usedGenres.length;
+
+    fill(0, 0, 100, 90);
+    textAlign(LEFT, TOP);
+    textSize(12);
+
+    const padding = 10;
+    const lineHeight = 14;
+    const yBase = height - padding * 2 - lineHeight * 2;
+
+    text(
+      `Rows: ${rowsData.length}  |  Circles: ${circles.length}  |  Genres: ${gCount}`,
+      padding,
+      yBase
+    );
+
+    const yearText = (yearFilter == null || yearMin == null)
+      ? "Years: all"
+      : `Years: ≤ ${yearFilter}`;
+    text(
+      `Size: ${sizeMetric}  ·  ${yearText}  ·  Hover: details  ·  Click: Spotify`,
+      padding,
+      yBase + lineHeight
+    );
+  }
+
+  function drawLegend() {
+    const usedGenres = LEGEND_ORDER.filter(g => genreCount[g] > 0);
+    if (!usedGenres.length) return;
+
+    const x = width - 190;
+    const yStart = 20;
+    const swatchSize = 10;
+    const lineHeight = 16;
+    const boxHeight = usedGenres.length * lineHeight + 18;
+
+    noStroke();
+    fill(0, 0, 0, 160);
+    rect(x - 12, yStart - 12, 180, boxHeight, 6);
+
+    textAlign(LEFT, CENTER);
+    textSize(11);
+
+    for (let i = 0; i < usedGenres.length; i++) {
+      const g = usedGenres[i];
+      const style = GENRE_STYLES[g];
+      const yy = yStart + i * lineHeight;
+
+      fill(style.h, style.s, style.b, 90);
+      rect(x, yy - swatchSize / 2, swatchSize, swatchSize, 2);
+
+      fill(0, 0, 95, 100);
+      text(g, x + swatchSize + 6, yy);
+    }
+  }
+
+  function drawTooltip() {
+    if (hoveredIndex < 0) return;
+    const c = circles[hoveredIndex];
+    const row = rowsData[c.rowIndex];
+    if (!row || !passesYearFilter(row)) return;
+
+    const lines = [];
+    if (row.track)  lines.push(row.track);
+    if (row.artist) lines.push("by " + row.artist);
+    if (row.genre)  lines.push(row.genre);
+    if (row.year)   lines.push("Year: " + row.year);
+    if (row.tempo != null && isFinite(row.tempo)) {
+      lines.push("Tempo: " + Math.round(row.tempo) + " BPM");
+    }
+    if (typeof row.dance === "number") {
+      lines.push("Danceability: " + row.dance.toFixed(2));
+    }
+    lines.push("Size metric: " + sizeMetric);
+
+    textSize(12);
+    textAlign(LEFT, TOP);
+
+    const padding = 8;
+    const lineHeight = 14;
+    let w = 0;
+    for (let l of lines) w = Math.max(w, textWidth(l));
+    const h = lines.length * lineHeight + padding * 2;
+
+    let x = mouseX + 16;
+    let y = mouseY + 16;
+
+    if (x + w + padding * 2 > width) {
+      x = width - w - padding * 2 - 10;
+    }
+    if (y + h > height) {
+      y = height - h - 10;
+    }
+
+    noStroke();
+    fill(0, 0, 0, 210);
+    rect(x, y, w + padding * 2, h, 6);
+
+    fill(0, 0, 100, 100);
+    let ty = y + padding;
+    for (let l of lines) {
+      text(l, x + padding, ty);
+      ty += lineHeight;
+    }
+  }
+
+  function windowResized() {
+    resizeCanvas(windowWidth, windowHeight);
+  }
+
+  function handleFile(file) {
+    if (file.type === "text") {
+      parseCSV(file.data);
+    } else {
+      console.log("Not a text/CSV file");
+    }
+  }
+
+  function parseCSV(csvText) {
+    const lines = csvText
+      .trim()
+      .split(/\r?\n/)
+      .filter(l => l.trim().length > 0);
+
+    if (lines.length < 2) {
+      console.warn("CSV has no data rows.");
+      return;
+    }
+
+    const firstLine = lines[0];
+    const delimiter =
+      firstLine.split(";").length > firstLine.split(",").length ? ";" : ",";
+
+    const headers = firstLine.split(delimiter).map(h => h.trim());
+
+    const genreIndex   = headers.indexOf("playlist_genre");
+    const artistIndex  = headers.indexOf("artist_name");
+    const trackIndex   = headers.indexOf("track_name");
+    const urlIndex     = headers.indexOf("spotify_url");
+    const dateIndex    = headers.indexOf("track_album_release_date");
+
+    if (genreIndex === -1) {
+      console.warn("CSV must contain playlist_genre column.");
+      return;
+    }
+
+    // Find indices for size-related fields
+    const sizeIndices = {};
+    for (const field of SIZE_FIELDS) {
+      sizeIndices[field] = headers.indexOf(field);
+    }
+
+    if (sizeIndices["danceability"] === -1) {
+      console.warn("CSV must contain danceability for default sizing.");
+      return;
+    }
+
+    // Reset globals
+    rowsData = [];
+    circles = [];
+    genreCenters = {};
+    clusterSpread = {};
+    hoveredIndex = -1;
+    yearMin = null;
+    yearMax = null;
+    yearFilter = null;
+
+    genreCount = { "Pop":0, "Rap":0, "Latin":0, "R&b":0, "Rock":0, "Edm":0 };
+    sizeStats = {};
+    for (const field of SIZE_FIELDS) {
+      sizeStats[field] = { min: Infinity, max: -Infinity, available: false };
+    }
+
+    // Parse rows
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(delimiter);
+      if (parts.length < headers.length) continue;
+
+      const rawGenre = (parts[genreIndex] || "").trim();
+      const canonical = canonicalGenre(rawGenre);
+      if (!canonical) continue; // only 6 canonical genres
+
+      const row = {
+        genre: canonical,
+        artist: "",
+        track: "",
+        url: "",
+        tempo: null,
+        dance: 0.5,
+        year: null
+      };
+
+      // Parse metrics
+      for (const field of SIZE_FIELDS) {
+        const idx = sizeIndices[field];
+        let v = null;
+        if (idx !== -1) {
+          const token = (parts[idx] || "").trim();
+          if (token !== "") {
+            const num = parseFloat(token);
+            if (!isNaN(num)) {
+              v = num;
+              const st = sizeStats[field];
+              st.available = true;
+              if (num < st.min) st.min = num;
+              if (num > st.max) st.max = num;
+            }
+          }
+        }
+        row[field] = v;
+      }
+
+      // Danceability for tooltip (0–1)
+      let danceVal = row["danceability"];
+      if (danceVal == null || !isFinite(danceVal)) danceVal = 0.5;
+      danceVal = Math.max(0, Math.min(1, danceVal));
+      row.dance = danceVal;
+      row["danceability"] = danceVal;
+
+      // Tempo alias
+      row.tempo = row["tempo"];
+
+      // Album release year
+      if (dateIndex !== -1 && parts[dateIndex]) {
+        const ds = parts[dateIndex].trim();
+        if (ds.length >= 4) {
+          const yStr = ds.slice(0, 4);
+          const yVal = parseInt(yStr, 10);
+          if (!isNaN(yVal)) {
+            row.year = yVal;
+            if (yearMin === null || yVal < yearMin) yearMin = yVal;
+            if (yearMax === null || yVal > yearMax) yearMax = yVal;
+          }
+        }
+      }
+
+      // Other text fields
+      row.artist =
+        (artistIndex !== -1 && parts[artistIndex]) ? parts[artistIndex].trim() : "";
+      row.track =
+        (trackIndex  !== -1 && parts[trackIndex])  ? parts[trackIndex].trim()  : "";
+      row.url =
+        (urlIndex    !== -1 && parts[urlIndex])    ? parts[urlIndex].trim()    : "";
+
+      genreCount[canonical] = (genreCount[canonical] || 0) + 1;
+
+      rowsData.push(row);
+    }
+
+    if (!rowsData.length) {
+      console.warn("No valid rows after filtering.");
+      return;
+    }
+
+    // Tempo range from sizeStats["tempo"]
+    if (sizeStats["tempo"] && sizeStats["tempo"].available) {
+      tempoMin = sizeStats["tempo"].min;
+      tempoMax = sizeStats["tempo"].max;
+    } else {
+      tempoMin = 0;
+      tempoMax = 1;
+    }
+    if (!isFinite(tempoMin) || !isFinite(tempoMax) || tempoMin === tempoMax) {
+      tempoMin = 0;
+      tempoMax = 1;
+    }
+
+    // Setup year slider
+    const yearSlider = document.getElementById("yearRange");
+    const yearLabel  = document.getElementById("yearLabel");
+    if (yearSlider && yearLabel && yearMin !== null && yearMax !== null) {
+      yearSlider.min = yearMin;
+      yearSlider.max = yearMax;
+      yearSlider.value = yearMax;
+      yearSlider.disabled = false;
+      yearFilter = yearMax;
+      yearLabel.textContent = yearMin + "–" + yearMax;
+    } else if (yearSlider && yearLabel) {
+      yearSlider.disabled = true;
+      yearLabel.textContent = "All years";
+      yearFilter = null;
+    }
+
+    computeGenreCenters();
+    generateCirclesFromData();
+  }
+
+  // Map raw CSV string to one of the 6 canonical genres (or null)
+  function canonicalGenre(raw) {
+    if (!raw) return null;
+    const g = raw.trim().toLowerCase();
+
+    if (g === "pop")   return "Pop";
+    if (g === "rap")   return "Rap";
+    if (g === "latin") return "Latin";
+    if (g === "r&b" || g === "rnb" || g === "r&b;") return "R&b";
+    if (g === "rock")  return "Rock";
+    if (g === "edm")   return "Edm";
+
+    return null;
+  }
+
+  function computeGenreCenters() {
+    genreCenters = {};
+    clusterSpread = {};
+
+    const usedGenres = LEGEND_ORDER.filter(g => genreCount[g] > 0);
+    const n = usedGenres.length;
+    if (!n) return;
+
+    const cx = 0.5;
+    const cy = 0.5;
+
+    if (n === 1) {
+      genreCenters[usedGenres[0]] = { nx: cx, ny: cy };
+      clusterSpread[usedGenres[0]] = 0.14;
+      return;
+    }
+
+    const centerRadius = 0.24;
+    const baseSpreadMin = 0.11;
+    const baseSpreadMax = 0.16;
+
+    let maxCount = 0;
+    for (let g of usedGenres) {
+      if (genreCount[g] > maxCount) maxCount = genreCount[g];
+    }
+    if (maxCount < 1) maxCount = 1;
+
+    const step = TWO_PI / n;
+
+    for (let i = 0; i < n; i++) {
+      const g = usedGenres[i];
+      const angle = i * step;
+
+      let nx = cx + centerRadius * Math.cos(angle);
+      let ny = cy + centerRadius * Math.sin(angle);
+
+      nx = constrain(nx, MARGIN_NORM + baseSpreadMax, 1 - MARGIN_NORM - baseSpreadMax);
+      ny = constrain(ny, MARGIN_NORM + baseSpreadMax, 1 - MARGIN_NORM - baseSpreadMax);
+
+      genreCenters[g] = { nx, ny };
+
+      const f = genreCount[g] / maxCount;
+      clusterSpread[g] = baseSpreadMin + f * (baseSpreadMax - baseSpreadMin);
+    }
+  }
+
+  function getSizeNorm(row, metric) {
+    if (!row) return 0.5;
+    const stats = sizeStats[metric];
+    const val = row[metric];
+
+    if (!stats || !stats.available || val == null || !isFinite(val) ||
+        !isFinite(stats.min) || !isFinite(stats.max) || stats.min === stats.max) {
+      if (metric !== "danceability") {
+        return getSizeNorm(row, "danceability");
+      }
+      if (typeof row.dance === "number" && isFinite(row.dance)) {
+        return Math.max(0, Math.min(1, row.dance));
+      }
+      return 0.5;
+    }
+
+    let norm = (val - stats.min) / (stats.max - stats.min);
+    return Math.max(0, Math.min(1, norm));
+  }
+
+  function generateCirclesFromData() {
+    circles = [];
+
+    const usedGenres = LEGEND_ORDER.filter(g => genreCount[g] > 0);
+    if (!usedGenres.length) return;
+
+    for (let i = 0; i < rowsData.length; i++) {
+      const row = rowsData[i];
+      const center = genreCenters[row.genre] || { nx: 0.5, ny: 0.5 };
+      const spread = clusterSpread[row.genre] || 0.13;
+      const style = GENRE_STYLES[row.genre];
+
+      const sizeNorm = getSizeNorm(row, sizeMetric);
+      const dNorm = MIN_SIZE_NORM + sizeNorm * (MAX_SIZE_NORM - MIN_SIZE_NORM);
+
+      let tempoNorm = 0.5;
+      if (row.tempo != null && isFinite(row.tempo) && tempoMax > tempoMin) {
+        tempoNorm = (row.tempo - tempoMin) / (tempoMax - tempoMin);
+        tempoNorm = Math.max(0, Math.min(1, tempoNorm));
+      }
+
+      // Initial position: uniformly over the cluster disc
+      const angle = random(TWO_PI);
+      const rNorm = spread * Math.sqrt(random());
+      let nx = center.nx + rNorm * Math.cos(angle);
+      let ny = center.ny + rNorm * Math.sin(angle);
+
+      nx = Math.max(MARGIN_NORM, Math.min(1 - MARGIN_NORM, nx));
+      ny = Math.max(MARGIN_NORM, Math.min(1 - MARGIN_NORM, ny));
+
+      circles.push({
+        nx,
+        ny,
+        cx: center.nx,
+        cy: center.ny,
+        spread,
+        dNorm,
+        tempoNorm,
+        phase: random(TWO_PI),
+        h: style.h,
+        s: style.s,
+        b: style.b,
+        rowIndex: i
+      });
+    }
+
+    relaxCircles(8);
+  }
+
+  function updateCircleSizesFromMetric() {
+    if (!rowsData.length || !circles.length) return;
+    for (let i = 0; i < circles.length; i++) {
+      const c = circles[i];
+      const row = rowsData[c.rowIndex];
+      const sizeNorm = getSizeNorm(row, sizeMetric);
+      c.dNorm = MIN_SIZE_NORM + sizeNorm * (MAX_SIZE_NORM - MIN_SIZE_NORM);
+    }
+    relaxCircles(6);
+  }
+
+  // Simple relaxation: repulsion + gentle attraction to cluster center
+  function relaxCircles(iterations) {
+    const n = circles.length;
+    if (n <= 1) return;
+
+    for (let it = 0; it < iterations; it++) {
+      // Pairwise repulsion
+      for (let i = 0; i < n; i++) {
+        const a = circles[i];
+        for (let j = i + 1; j < n; j++) {
+          const b = circles[j];
+
+          let dx = b.nx - a.nx;
+          let dy = b.ny - a.ny;
+          const distSq = dx * dx + dy * dy;
+
+          const minDist = (a.dNorm + b.dNorm) * 0.5 + CUSHION_NORM;
+          const minDistSq = minDist * minDist;
+
+          if (distSq < minDistSq && distSq > 0) {
+            const dist = Math.sqrt(distSq);
+            const overlap = (minDist - dist) * 0.5;
+            const ux = dx / dist;
+            const uy = dy / dist;
+
+            a.nx -= ux * overlap;
+            a.ny -= uy * overlap;
+            b.nx += ux * overlap;
+            b.ny += uy * overlap;
+          }
+        }
+      }
+
+      // Attraction back to cluster & clamping
+      for (let k = 0; k < n; k++) {
+        const c = circles[k];
+
+        const dxC = c.cx - c.nx;
+        const dyC = c.cy - c.ny;
+        c.nx += dxC * CENTER_PULL;
+        c.ny += dyC * CENTER_PULL;
+
+        const dx2 = c.nx - c.cx;
+        const dy2 = c.ny - c.cy;
+        const distC = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+        const maxR = c.spread;
+        if (distC > maxR && distC > 0) {
+          const scale = maxR / distC;
+          c.nx = c.cx + dx2 * scale;
+          c.ny = c.cy + dy2 * scale;
+        }
+
+        c.nx = Math.max(MARGIN_NORM, Math.min(1 - MARGIN_NORM, c.nx));
+        c.ny = Math.max(MARGIN_NORM, Math.min(1 - MARGIN_NORM, c.ny));
+      }
+    }
+  }
+
+  function passesYearFilter(row) {
+    if (!row) return false;
+    if (yearFilter == null || row.year == null) return true;
+    return row.year <= yearFilter;
+  }
+
+  function mousePressed() {
+    if (hoveredIndex < 0) return;
+    const c = circles[hoveredIndex];
+    const row = rowsData[c.rowIndex];
+    if (row && row.url) {
+      window.open(row.url, "_blank");
+    }
+  }
+</script>
+</body>
+</html>

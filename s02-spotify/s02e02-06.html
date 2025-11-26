@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CSV Genre Clusters – Spiral Layout</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #111;
+      color: #eee;
+      font-family: system-ui, sans-serif;
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<script>
+  let circles = [];
+  let rowsData = [];
+  let canvas;
+
+  let genreColors = {};   // playlist_genre -> hue
+  let genreCenters = {};  // playlist_genre -> {x, y}
+  let nextHue = 0;
+
+  const MIN_DIAMETER = 6;
+  const MAX_DIAMETER = 26;
+  const GOLDEN_ANGLE = 2.399963229728653; // radians
+
+  function setup() {
+    canvas = createCanvas(windowWidth, windowHeight);
+    canvas.drop(handleFile);
+    noLoop();
+    colorMode(HSB, 360, 100, 100, 100);
+  }
+
+  function draw() {
+    background(0);
+
+    if (circles.length === 0) {
+      fill(0, 0, 90);
+      textAlign(CENTER, CENTER);
+      textSize(24);
+      text("Drop a CSV file onto the screen", width / 2, height / 2 - 20);
+      textSize(14);
+      text("Color = playlist_genre, Size = danceability", width / 2, height / 2 + 10);
+      return;
+    }
+
+    noStroke();
+    for (let c of circles) {
+      fill(c.h, 80, 90, 65);
+      circle(c.x, c.y, c.d);
+    }
+
+    // Small overlay info
+    fill(0, 0, 100, 80);
+    textAlign(LEFT, TOP);
+    textSize(12);
+    text(`Rows: ${rowsData.length} | Circles: ${circles.length}`, 10, 10);
+  }
+
+  function windowResized() {
+    resizeCanvas(windowWidth, windowHeight);
+    if (rowsData.length > 0) {
+      computeGenreCenters();
+      generateCirclesFromData();
+    }
+    redraw();
+  }
+
+  function handleFile(file) {
+    if (file.type === 'text') {
+      parseCSV(file.data);
+    }
+  }
+
+  function parseCSV(csvText) {
+    const firstLine = csvText.split(/\r?\n/)[0];
+    const delimiter = firstLine.includes(";") ? ";" : ",";
+
+    const lines = csvText.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (lines.length < 2) return;
+
+    const headers = lines[0].split(delimiter).map(h => h.trim());
+
+    const genreIndex = headers.indexOf("playlist_genre");
+    const danceIndex = headers.indexOf("danceability");
+
+    if (genreIndex === -1 || danceIndex === -1) {
+      console.warn("CSV must contain playlist_genre and danceability columns.");
+      return;
+    }
+
+    rowsData = [];
+    genreColors = {};
+    genreCenters = {};
+    nextHue = 0;
+
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(delimiter);
+      if (parts.length < headers.length) continue;
+
+      const genre = (parts[genreIndex] || "").trim();
+      let dance = parseFloat((parts[danceIndex] || "").trim());
+      if (isNaN(dance)) dance = 0.5;
+      dance = constrain(dance, 0, 1);
+
+      rowsData.push({ genre, dance });
+    }
+
+    computeGenreCenters();
+    generateCirclesFromData();
+    redraw();
+  }
+
+  function getHueForGenre(genre) {
+    if (!genre) genre = "Unknown";
+    if (!(genre in genreColors)) {
+      genreColors[genre] = nextHue;
+      nextHue = (nextHue + 40) % 360; // step around color wheel
+    }
+    return genreColors[genre];
+  }
+
+  function computeGenreCenters() {
+    const genres = [...new Set(rowsData.map(r => r.genre || "Unknown"))];
+
+    const n = genres.length;
+    if (n === 0) return;
+
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const ringRadius = min(width, height) * 0.25; // keep clusters fairly close
+
+    // Place genre centers around a circle near the middle
+    for (let i = 0; i < n; i++) {
+      const angle = TWO_PI * (i / n);
+      const gx = centerX + ringRadius * cos(angle);
+      const gy = centerY + ringRadius * sin(angle);
+      genreCenters[genres[i]] = { x: gx, y: gy };
+    }
+  }
+
+  function generateCirclesFromData() {
+    circles = [];
+
+    // Group rows by genre
+    const byGenre = {};
+    for (let row of rowsData) {
+      const g = row.genre || "Unknown";
+      if (!byGenre[g]) byGenre[g] = [];
+      byGenre[g].push(row);
+    }
+
+    const baseScale = MAX_DIAMETER * 1.0; // spacing factor inside clusters
+
+    // For each genre, place circles in a golden-angle spiral around its center
+    for (let genre in byGenre) {
+      const rows = byGenre[genre];
+      const center = genreCenters[genre] || { x: width / 2, y: height / 2 };
+      const h = getHueForGenre(genre);
+
+      for (let k = 0; k < rows.length; k++) {
+        const row = rows[k];
+
+        const d = map(row.dance, 0, 1, MIN_DIAMETER, MAX_DIAMETER);
+
+        const r = baseScale * sqrt(k);         // radial distance grows with sqrt(k)
+        const angle = k * GOLDEN_ANGLE;        // golden-angle distribution
+
+        let x = center.x + r * cos(angle);
+        let y = center.y + r * sin(angle);
+
+        // Optional: keep inside bounds with a small margin
+        const margin = MAX_DIAMETER;
+        x = constrain(x, margin, width - margin);
+        y = constrain(y, margin, height - margin);
+
+        circles.push({ x, y, d, h });
+      }
+    }
+  }
+</script>
+</body>
+</html>

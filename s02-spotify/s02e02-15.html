@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Spotify 900</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      /* Radial gradient: black center -> dark gray edges */
+      background: radial-gradient(circle at center, #000000 0%, #111111 45%, #333333 100%);
+      color: #eee;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+                   Roboto, sans-serif;
+    }
+    canvas {
+      display: block;
+      background: transparent;
+    }
+
+    /* Header: title + buttons + controls */
+    #header {
+      position: fixed;
+      top: 12px;
+      left: 16px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      color: #eee;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    }
+    #titleRow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #header h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+    }
+    #infoButton,
+    #loadDemo {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(0, 0, 0, 0.7);
+      color: #eee;
+      cursor: pointer;
+    }
+    #infoButton:hover,
+    #loadDemo:hover {
+      background: rgba(255,255,255,0.12);
+    }
+    #loadDemo:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    #controls {
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    #controls label {
+      margin-right: 4px;
+    }
+    #sizeMetric {
+      font-size: 13px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #555;
+      background: rgba(0, 0, 0, 0.7);
+      color: #eee;
+    }
+    #sizeMetric:disabled {
+      opacity: 0.5;
+    }
+
+    /* Year filter slider (bottom right) */
+    #yearFilter {
+      position: fixed;
+      right: 16px;
+      bottom: 12px;
+      z-index: 10;
+      display: none; /* shown when we detect year data */
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      font-size: 11px;
+      color: #eee;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+      align-items: center;
+      gap: 6px;
+    }
+    #yearFilter label {
+      margin-right: 4px;
+    }
+    #yearSlider {
+      width: 140px;
+    }
+    #yearValue {
+      min-width: 80px;
+      text-align: right;
+      font-weight: 500;
+    }
+
+    /* Modal overlay for "What is this?" */
+    #infoModal {
+      position: fixed;
+      inset: 0;
+      display: none; /* toggled via .show */
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      background: rgba(0, 0, 0, 0.7);
+    }
+    #infoModal.show {
+      display: flex;
+    }
+    #infoModal .info-box {
+      background: rgba(15, 15, 15, 0.96);
+      padding: 18px 22px;
+      border-radius: 10px;
+      max-width: 480px;
+      width: min(90vw, 480px);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.75);
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+    #infoModal .info-box h2 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+    #infoModal .info-box p {
+      margin: 0 0 10px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #ddd;
+    }
+    #infoModal .info-box button {
+      margin-top: 8px;
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(0, 0, 0, 0.7);
+      color: #eee;
+      cursor: pointer;
+    }
+    #infoModal .info-box button:hover {
+      background: rgba(255,255,255,0.12);
+    }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <div id="titleRow">
+    <h1>Spotify 900</h1>
+    <button id="infoButton" type="button">What is this?</button>
+  </div>
+  <button id="loadDemo" type="button">Use sample data</button>
+  <div id="controls">
+    <label for="sizeMetric">Circle size:</label>
+    <select id="sizeMetric">
+      <option value="danceability">danceability</option>
+      <option value="loudness">loudness</option>
+      <option value="speechiness">speechiness</option>
+      <option value="acousticness">acousticness</option>
+      <option value="liveness">liveness</option>
+      <option value="valence">valence</option>
+      <option value="tempo">tempo</option>
+      <option value="duration_ms">duration_ms</option>
+    </select>
+  </div>
+</div>
+
+<div id="yearFilter">
+  <label for="yearSlider">Year:</label>
+  <input type="range" id="yearSlider" />
+  <span id="yearValue">all years</span>
+</div>
+
+<div id="infoModal">
+  <div class="info-box">
+    <h2>What is this?</h2>
+    <p>
+      This is a placeholder for your project description.
+      Edit this text directly in the HTML to explain what “Spotify 900”
+      represents, how to read the visualization, and any notes about
+      the dataset or metrics.
+    </p>
+    <button id="closeInfo" type="button">Close</button>
+  </div>
+</div>
+
+<script>
+  // Your published Google Sheet CSV
+  const DEMO_CSV_URL =
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vT7PRg09PisvRVkQqzdV6Y3eTxtXKWDVQxAPypLxnCHRtZ5oUonKjfHrgpvBXBFjNfH-h7HDz8ZpyUX/pub?gid=108701105&single=true&output=csv";
+
+  let canvas;
+
+  let rowsData = []; // { genre, artist, track, url, metrics:{}, year, tempoNorm }
+  let circles  = []; // visual nodes
+
+  const METRIC_OPTIONS = [
+    "danceability",
+    "loudness",
+    "speechiness",
+    "acousticness",
+    "liveness",
+    "valence",
+    "tempo",
+    "duration_ms"
+  ];
+
+  let metricStats = {}; // metric -> {min, max, has}
+  let currentSizeMetric = "danceability";
+
+  // Size (normalized to min(width, height))
+  const MIN_SIZE_NORM   = 0.004;
+  const MAX_SIZE_NORM   = 0.02;
+
+  // Layout tuning
+  const MARGIN_NORM     = 0.06;
+  const MIN_SPREAD_NORM = 0.09;
+  const MAX_SPREAD_NORM = 0.18;
+  const CUSHION_NORM    = 0.0015;
+  const RELAX_ITERATIONS = 8;
+  const INNER_FRAC      = 0.10;
+
+  // Hover & filter state
+  let hoveredIndex = -1;
+  let visibleCount = 0;
+
+  let presentGenres = new Set(); // canonical genres present
+  let clusterCounts = {};        // clusterKey -> count
+  let genreCenters  = {};        // clusterKey -> {nx, ny}
+
+  // Year filter
+  let yearMin = null;
+  let yearMax = null;
+  let currentYearFilter = null;
+
+  // Fixed colors for genres (HSB)
+  const GENRE_STYLES = {
+    "Pop":   { h: 330, s: 80, b: 100 }, // pink
+    "Rap":   { h: 30,  s: 80, b: 70  }, // brown
+    "Latin": { h: 50,  s: 90, b: 100 }, // yellow
+    "R&b":   { h: 210, s: 80, b: 100 }, // blue
+    "Rock":  { h: 0,   s: 90, b: 100 }, // red
+    "Edm":   { h: 0,   s: 0,  b: 70  }, // gray
+    "Other": { h: 0,   s: 0,  b: 40  }  // dark gray (not in legend)
+  };
+
+  const LEGEND_ORDER = ["Pop", "Rap", "Latin", "R&b", "Rock", "Edm"];
+
+  function setup() {
+    canvas = createCanvas(windowWidth, windowHeight);
+    canvas.drop(handleFile);
+    colorMode(HSB, 360, 100, 100, 100);
+
+    const sizeSelect = document.getElementById("sizeMetric");
+    if (sizeSelect) {
+      sizeSelect.value = currentSizeMetric;
+      sizeSelect.addEventListener("change", () => {
+        currentSizeMetric = sizeSelect.value;
+        updateCircleSizes();
+      });
+    }
+
+    const infoButton = document.getElementById("infoButton");
+    const infoModal  = document.getElementById("infoModal");
+    const closeInfo  = document.getElementById("closeInfo");
+    if (infoButton && infoModal && closeInfo) {
+      infoButton.addEventListener("click", () => {
+        infoModal.classList.add("show");
+      });
+      closeInfo.addEventListener("click", () => {
+        infoModal.classList.remove("show");
+      });
+      infoModal.addEventListener("click", (e) => {
+        if (e.target === infoModal) {
+          infoModal.classList.remove("show");
+        }
+      });
+    }
+
+    // Demo data button (load your Google Sheet CSV)
+    const demoBtn = document.getElementById("loadDemo");
+    if (demoBtn) {
+      demoBtn.addEventListener("click", () => {
+        demoBtn.disabled = true;
+        const originalLabel = demoBtn.textContent;
+        demoBtn.textContent = "Loading…";
+        fetch(DEMO_CSV_URL)
+          .then(res => res.text())
+          .then(text => {
+            parseCSV(text);
+          })
+          .catch(err => {
+            console.error("Error loading sample CSV", err);
+            alert("Could not load sample data. Check console for details.");
+          })
+          .finally(() => {
+            demoBtn.disabled = false;
+            demoBtn.textContent = originalLabel;
+          });
+      });
+    }
+
+    const yearSlider = document.getElementById("yearSlider");
+    const yearValue  = document.getElementById("yearValue");
+    if (yearSlider && yearValue) {
+      yearSlider.addEventListener("input", () => {
+        if (yearMin === null || yearMax === null) return;
+        const val = parseInt(yearSlider.value, 10);
+        if (!isNaN(val)) {
+          currentYearFilter = val;
+          if (val <= yearMin) {
+            yearValue.textContent = `all (${yearMin}–${yearMax})`;
+          } else {
+            yearValue.textContent = `from ${val}`;
+          }
+        }
+      });
+    }
+  }
+
+  function draw() {
+    // Transparent canvas so the radial gradient shows
+    clear();
+
+    if (!circles.length) {
+      drawInstructions();
+      return;
+    }
+
+    const minDim   = min(width, height);
+    const marginPx = MARGIN_NORM * minDim;
+    const usableW  = max(width  - marginPx * 2, 10);
+    const usableH  = max(height - marginPx * 2, 10);
+
+    hoveredIndex = -1;
+    visibleCount = 0;
+    let closestDistSq = Infinity;
+    const t = millis() / 1000.0;
+
+    // 1) Compute positions, diameters, hover & visibility
+    for (let i = 0; i < circles.length; i++) {
+      const c = circles[i];
+      const row = rowsData[c.rowIndex];
+
+      c.x = marginPx + c.nx * usableW;
+      c.y = marginPx + c.ny * usableH;
+
+      const visible = isRowVisibleByYear(row);
+      c.visible = visible;
+      if (!visible) continue;
+
+      visibleCount++;
+
+      const baseDpx = c.sizeNorm * minDim;
+      const speed   = 0.5 + c.tempoNorm * 2.0;
+      const pulse   = sin(TWO_PI * speed * t + c.phase);
+      const amp     = 0.18;
+      const d       = baseDpx * (1 + amp * pulse);
+      c.currentD    = d;
+
+      const dx = mouseX - c.x;
+      const dy = mouseY - c.y;
+      const distSq = dx * dx + dy * dy;
+      const r = d / 2;
+
+      if (distSq < r * r && distSq < closestDistSq) {
+        closestDistSq = distSq;
+        hoveredIndex = i;
+      }
+    }
+
+    // 2) Draw non-hovered visible circles
+    noStroke();
+    for (let i = 0; i < circles.length; i++) {
+      const c = circles[i];
+      if (!c.visible || i === hoveredIndex) continue;
+      const d = c.currentD || (c.sizeNorm * minDim);
+      fill(c.h, c.s, c.b, 70);
+      circle(c.x, c.y, d);
+    }
+
+    // 3) Draw hovered circle on top
+    if (hoveredIndex >= 0) {
+      const c = circles[hoveredIndex];
+      const d = c.currentD || (c.sizeNorm * minDim);
+      stroke(0, 0, 100, 90);
+      strokeWeight(1.2);
+      fill(c.h, c.s, c.b, 90);
+      circle(c.x, c.y, d * 1.08);
+      noStroke();
+      cursor("pointer");
+    } else {
+      cursor("default");
+    }
+
+    drawOverlay();
+    drawLegend();
+    drawTooltip();
+  }
+
+  function drawInstructions() {
+    fill(0, 0, 95);
+    textAlign(CENTER, CENTER);
+    textSize(20);
+    text(
+      "Click “Use sample data” (top‑left) or drop a CSV onto the screen",
+      width / 2,
+      height / 2 - 18
+    );
+    textSize(13);
+    text(
+      "Expected fields: playlist_genre, track_album_release_date, artist_name, track_name, spotify_url,",
+      width / 2,
+      height / 2 + 8
+    );
+    text(
+      "plus audio features like danceability, loudness, speechiness, acousticness, liveness, valence, tempo, duration_ms",
+      width / 2,
+      height / 2 + 26
+    );
+  }
+
+  // Overlay at bottom-left
+  function drawOverlay() {
+    fill(0, 0, 100, 85);
+    textAlign(LEFT, TOP);
+    textSize(12);
+
+    const genresCount = presentGenres.size;
+    let filterStr = "";
+    if (yearMin !== null && yearMax !== null &&
+        currentYearFilter !== null && currentYearFilter > yearMin) {
+      filterStr = ` · Year ≥ ${currentYearFilter}`;
+    }
+
+    const lines = [
+      `Rows: ${rowsData.length}  |  Visible: ${visibleCount}  |  Genres: ${genresCount}${filterStr}`,
+      "Hover for info · Click = open spotify_url · Drop new CSV or use sample data"
+    ];
+
+    const lineHeight = 14;
+    const padding    = 10;
+    const startY     = height - padding - lines.length * lineHeight;
+    let y = startY;
+    for (let line of lines) {
+      text(line, padding, y);
+      y += lineHeight;
+    }
+  }
+
+  function drawLegend() {
+    const visibleGenres = LEGEND_ORDER.filter(g => presentGenres.has(g));
+    if (!visibleGenres.length) return;
+
+    const x = width - 190;
+    let y   = 20;
+    const swatchSize  = 10;
+    const lineHeight  = 16;
+    const panelHeight = visibleGenres.length * lineHeight + 18;
+
+    push();
+    noStroke();
+    fill(0, 0, 0, 160);
+    rect(x - 12, y - 12, 180, panelHeight, 6);
+    pop();
+
+    textAlign(LEFT, CENTER);
+    textSize(11);
+
+    for (let i = 0; i < visibleGenres.length; i++) {
+      const g = visibleGenres[i];
+      const style = GENRE_STYLES[g];
+      const yy = y + i * lineHeight;
+
+      fill(style.h, style.s, style.b, 90);
+      rect(x, yy - swatchSize / 2, swatchSize, swatchSize, 2);
+
+      fill(0, 0, 95, 100);
+      text(g, x + swatchSize + 6, yy);
+    }
+  }
+
+  function drawTooltip() {
+    if (hoveredIndex < 0) return;
+    const c = circles[hoveredIndex];
+    if (!c.visible) return;
+
+    const row = rowsData[c.rowIndex];
+    if (!row) return;
+
+    const lines = [];
+    if (row.track)  lines.push(row.track);
+    if (row.artist) lines.push("by " + row.artist);
+    lines.push(row.genre === "Other" ? "Other genre" : row.genre);
+
+    if (row.year != null) {
+      lines.push("Year: " + row.year);
+    }
+
+    const tempoVal = row.metrics.tempo;
+    if (tempoVal != null) {
+      lines.push("Tempo: " + Math.round(tempoVal) + " BPM");
+    }
+    const danceVal = row.metrics.danceability;
+    if (danceVal != null) {
+      lines.push("Danceability: " + danceVal.toFixed(2));
+    }
+
+    const sizeVal = row.metrics[currentSizeMetric];
+    if (sizeVal != null &&
+        currentSizeMetric !== "danceability" &&
+        currentSizeMetric !== "tempo") {
+      lines.push(currentSizeMetric + ": " + sizeVal.toFixed(3));
+    }
+
+    textSize(12);
+    textAlign(LEFT, TOP);
+
+    const padding    = 8;
+    const lineHeight = 14;
+    let w = 0;
+    for (let l of lines) w = max(w, textWidth(l));
+    const h = lines.length * lineHeight + padding * 2;
+
+    let x = mouseX + 16;
+    let y = mouseY + 16;
+
+    if (x + w + padding * 2 > width) {
+      x = width - w - padding * 2 - 10;
+    }
+    if (y + h > height) {
+      y = height - h - 10;
+    }
+
+    noStroke();
+    fill(0, 0, 0, 210);
+    rect(x, y, w + padding * 2, h, 6);
+
+    fill(0, 0, 100, 100);
+    let ty = y + padding;
+    for (let l of lines) {
+      text(l, x + padding, ty);
+      ty += lineHeight;
+    }
+  }
+
+  function windowResized() {
+    resizeCanvas(windowWidth, windowHeight);
+  }
+
+  function handleFile(file) {
+    if (file.type === "text") {
+      parseCSV(file.data);
+    } else {
+      console.log("Not a text/CSV file");
+    }
+  }
+
+  function parseCSV(csvText) {
+    const lines = csvText
+      .trim()
+      .split(/\r?\n/)
+      .filter(l => l.trim().length > 0);
+
+    if (lines.length < 2) {
+      console.warn("CSV has no data rows.");
+      return;
+    }
+
+    const firstLine = lines[0];
+    const delimiter =
+      firstLine.split(";").length > firstLine.split(",").length ? ";" : ",";
+
+    const headers = firstLine.split(delimiter).map(h => h.trim());
+
+    const genreIndex   = headers.indexOf("playlist_genre");
+    const artistIndex  = headers.indexOf("artist_name");
+    const trackIndex   = headers.indexOf("track_name");
+    const urlIndex     = headers.indexOf("spotify_url");
+    const releaseIndex = headers.indexOf("track_album_release_date");
+
+    const colIndex = {};
+    for (let m of METRIC_OPTIONS) {
+      colIndex[m] = headers.indexOf(m);
+    }
+
+    if (genreIndex === -1) {
+      console.warn("CSV must contain playlist_genre column.");
+      return;
+    }
+
+    rowsData      = [];
+    circles       = [];
+    genreCenters  = {};
+    presentGenres = new Set();
+    clusterCounts = {};
+    hoveredIndex  = -1;
+    visibleCount  = 0;
+    yearMin = null;
+    yearMax = null;
+    currentYearFilter = null;
+
+    metricStats = {};
+    for (let m of METRIC_OPTIONS) {
+      metricStats[m] = { min: Infinity, max: -Infinity, has: false };
+    }
+
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(delimiter);
+      if (parts.length < headers.length) continue;
+
+      const rawGenre = (parts[genreIndex] || "").trim();
+      const genre    = canonicalGenre(rawGenre);
+
+      const artist =
+        (artistIndex !== -1 && parts[artistIndex]) ? parts[artistIndex].trim() : "";
+      const track =
+        (trackIndex  !== -1 && parts[trackIndex])  ? parts[trackIndex].trim()  : "";
+      const url =
+        (urlIndex    !== -1 && parts[urlIndex])    ? parts[urlIndex].trim()    : "";
+
+      let year = null;
+      if (releaseIndex !== -1 && parts[releaseIndex]) {
+        const dateStr = parts[releaseIndex].trim();
+        const match = dateStr.match(/^(\d{4})/);
+        if (match) {
+          const y = parseInt(match[1], 10);
+          if (!isNaN(y)) {
+            year = y;
+            yearMin = (yearMin === null) ? y : Math.min(yearMin, y);
+            yearMax = (yearMax === null) ? y : Math.max(yearMax, y);
+          }
+        }
+      }
+
+      const metrics = {};
+      for (let metric of METRIC_OPTIONS) {
+        const idx = colIndex[metric];
+        let value = null;
+        if (idx !== -1 && parts[idx] != null && parts[idx].trim() !== "") {
+          const v = parseFloat(parts[idx].trim());
+          if (!isNaN(v)) {
+            value = v;
+            const s = metricStats[metric];
+            s.min = Math.min(s.min, v);
+            s.max = Math.max(s.max, v);
+            s.has = true;
+          }
+        }
+        metrics[metric] = value;
+      }
+
+      rowsData.push({ genre, artist, track, url, metrics, year });
+
+      clusterCounts[genre] = (clusterCounts[genre] || 0) + 1;
+      if (GENRE_STYLES[genre] && genre !== "Other") {
+        presentGenres.add(genre);
+      }
+    }
+
+    if (!rowsData.length) {
+      console.warn("No valid rows after parsing.");
+      updateYearSlider(); // hides slider
+      return;
+    }
+
+    // Precompute tempoNorm from tempo metric stats
+    const tempoStats = metricStats["tempo"];
+    for (let row of rowsData) {
+      let tempoNorm = 0.5;
+      const v = row.metrics["tempo"];
+      if (tempoStats && tempoStats.has && v != null && tempoStats.max > tempoStats.min) {
+        tempoNorm = (v - tempoStats.min) / (tempoStats.max - tempoStats.min);
+        tempoNorm = constrain(tempoNorm, 0, 1);
+      }
+      row.tempoNorm = tempoNorm;
+    }
+
+    computeGenreLayout();
+    generateCirclesFromData();
+    updateYearSlider();
+    updateMetricDropdownState();
+  }
+
+  // Map raw genre strings into canonical 6 + "Other"
+  function canonicalGenre(raw) {
+    if (!raw) return "Other";
+    const g = raw.trim().toLowerCase();
+
+    if (g === "pop")   return "Pop";
+    if (g === "rap")   return "Rap";
+    if (g === "latin") return "Latin";
+    if (g === "r&b" || g === "rnb" || g === "r&b;") return "R&b";
+    if (g === "rock")  return "Rock";
+    if (g === "edm")   return "Edm";
+
+    return "Other";
+  }
+
+  function computeGenreLayout() {
+    genreCenters = {};
+    const clusters = Object.keys(clusterCounts);
+    if (!clusters.length) return;
+
+    const cx = 0.5;
+    const cy = 0.5;
+    const n  = clusters.length;
+    const ringRadius = n === 1 ? 0.0 : 0.27;
+    const angleStep  = TWO_PI / n;
+
+    for (let i = 0; i < clusters.length; i++) {
+      const key   = clusters[i];
+      const angle = i * angleStep - HALF_PI;
+      const r     = ringRadius;
+
+      let nx = cx + r * cos(angle);
+      let ny = cy + r * sin(angle);
+
+      nx = constrain(nx, MARGIN_NORM + MAX_SPREAD_NORM, 1 - MARGIN_NORM - MAX_SPREAD_NORM);
+      ny = constrain(ny, MARGIN_NORM + MAX_SPREAD_NORM, 1 - MARGIN_NORM - MAX_SPREAD_NORM);
+
+      genreCenters[key] = { nx, ny };
+    }
+  }
+
+  function normalizedMetric(row, metric) {
+    const stats = metricStats[metric];
+    const v     = row.metrics[metric];
+
+    if (!stats || !stats.has || v == null || stats.max === stats.min) {
+      const fbStats = metricStats["danceability"];
+      const fbVal   = row.metrics["danceability"];
+      if (fbStats && fbStats.has && fbVal != null && fbStats.max !== fbStats.min) {
+        let nv = (fbVal - fbStats.min) / (fbStats.max - fbStats.min);
+        return constrain(nv, 0, 1);
+      }
+      return 0.5;
+    }
+
+    let nv = (v - stats.min) / (stats.max - stats.min);
+    return constrain(nv, 0, 1);
+  }
+
+  function generateCirclesFromData() {
+    circles = [];
+    const clusters = Object.keys(clusterCounts);
+    if (!clusters.length) return;
+
+    let maxCount = 0;
+    for (let key of clusters) {
+      maxCount = Math.max(maxCount, clusterCounts[key]);
+    }
+    if (maxCount < 1) maxCount = 1;
+
+    const spreads = {};
+    for (let key of clusters) {
+      const frac   = clusterCounts[key] / maxCount;
+      const factor = sqrt(frac);
+      const spread = lerp(MIN_SPREAD_NORM, MAX_SPREAD_NORM, factor);
+      spreads[key] = spread;
+    }
+
+    for (let i = 0; i < rowsData.length; i++) {
+      const row     = rowsData[i];
+      const cluster = row.genre;
+      const center  = genreCenters[cluster] || { nx: 0.5, ny: 0.5 };
+      const spread  = spreads[cluster] || MIN_SPREAD_NORM;
+      const style   = GENRE_STYLES[cluster] || GENRE_STYLES["Other"];
+
+      const normVal  = normalizedMetric(row, currentSizeMetric);
+      const sizeNorm = lerp(MIN_SIZE_NORM, MAX_SIZE_NORM, normVal);
+
+      // Initial position: uniform over cluster disc with a soft hole in the center
+      const angle = random(TWO_PI);
+      const u     = random();
+      const rNorm = spread * sqrt(INNER_FRAC + (1 - INNER_FRAC) * u);
+
+      let nx = center.nx + rNorm * cos(angle);
+      let ny = center.ny + rNorm * sin(angle);
+
+      nx = constrain(nx, MARGIN_NORM, 1 - MARGIN_NORM);
+      ny = constrain(ny, MARGIN_NORM, 1 - MARGIN_NORM);
+
+      circles.push({
+        nx,
+        ny,
+        cluster,
+        spread,
+        sizeNorm,
+        tempoNorm: row.tempoNorm,
+        phase: random(TWO_PI),
+        h: style.h,
+        s: style.s,
+        b: style.b,
+        rowIndex: i,
+        x: 0,
+        y: 0,
+        currentD: 0,
+        visible: true
+      });
+    }
+
+    relaxCircles();
+  }
+
+  function updateCircleSizes() {
+    if (!rowsData.length || !circles.length) return;
+    for (let c of circles) {
+      const row = rowsData[c.rowIndex];
+      const normVal = normalizedMetric(row, currentSizeMetric);
+      c.sizeNorm = lerp(MIN_SIZE_NORM, MAX_SIZE_NORM, normVal);
+    }
+    relaxCircles();
+  }
+
+  function relaxCircles() {
+    const n = circles.length;
+    if (n <= 1) return;
+
+    for (let iter = 0; iter < RELAX_ITERATIONS; iter++) {
+      // Pairwise repulsion
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const a = circles[i];
+          const b = circles[j];
+
+          let dx = b.nx - a.nx;
+          let dy = b.ny - a.ny;
+          let distSq = dx * dx + dy * dy;
+
+          const minDist   = (a.sizeNorm + b.sizeNorm) * 0.5 + CUSHION_NORM;
+          const minDistSq = minDist * minDist;
+
+          if (distSq < minDistSq && distSq > 0) {
+            const dist    = Math.sqrt(distSq);
+            const overlap = (minDist - dist) * 0.5;
+            const ux = dx / dist;
+            const uy = dy / dist;
+            a.nx -= ux * overlap;
+            a.ny -= uy * overlap;
+            b.nx += ux * overlap;
+            b.ny += uy * overlap;
+          } else if (distSq === 0) {
+            const angle = random(TWO_PI);
+            const eps   = minDist * 0.5;
+            const ox    = cos(angle) * eps;
+            const oy    = sin(angle) * eps;
+            a.nx -= ox;
+            a.ny -= oy;
+            b.nx += ox;
+            b.ny += oy;
+          }
+        }
+      }
+
+      // Pull back into cluster discs & enforce margins
+      for (let k = 0; k < n; k++) {
+        const c = circles[k];
+        const center = genreCenters[c.cluster] || { nx: 0.5, ny: 0.5 };
+
+        let dx = c.nx - center.nx;
+        let dy = c.ny - center.ny;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        const maxR = c.spread;
+
+        if (dist > maxR && dist > 0) {
+          const f = (maxR * 0.98) / dist;
+          c.nx = center.nx + dx * f;
+          c.ny = center.ny + dy * f;
+        }
+
+        c.nx = constrain(c.nx, MARGIN_NORM, 1 - MARGIN_NORM);
+        c.ny = constrain(c.ny, MARGIN_NORM, 1 - MARGIN_NORM);
+      }
+    }
+  }
+
+  function isRowVisibleByYear(row) {
+    if (yearMin === null || yearMax === null || currentYearFilter === null) return true;
+    if (row.year == null) return true;
+    return row.year >= currentYearFilter;
+  }
+
+  function updateYearSlider() {
+    const wrapper = document.getElementById("yearFilter");
+    const slider  = document.getElementById("yearSlider");
+    const label   = document.getElementById("yearValue");
+    if (!wrapper || !slider || !label) return;
+
+    if (yearMin === null || yearMax === null || yearMin === yearMax) {
+      wrapper.style.display = "none";
+      currentYearFilter = null;
+      label.textContent = "all years";
+      return;
+    }
+
+    wrapper.style.display = "flex";
+    slider.min = yearMin;
+    slider.max = yearMax;
+    slider.step = 1;
+    slider.value = yearMin;
+    currentYearFilter = yearMin;
+    label.textContent = `all (${yearMin}–${yearMax})`;
+  }
+
+  function updateMetricDropdownState() {
+    const select = document.getElementById("sizeMetric");
+    if (!select) return;
+
+    let hasCurrent = false;
+    for (let i = 0; i < select.options.length; i++) {
+      const opt = select.options[i];
+      const metric = opt.value;
+      const stats  = metricStats[metric];
+      const available = stats && stats.has && stats.max > stats.min;
+      opt.disabled = !available;
+      if (available && metric === currentSizeMetric) {
+        hasCurrent = true;
+      }
+    }
+
+    if (!hasCurrent) {
+      for (let i = 0; i < select.options.length; i++) {
+        const opt = select.options[i];
+        if (!opt.disabled) {
+          currentSizeMetric = opt.value;
+          select.value = currentSizeMetric;
+          break;
+        }
+      }
+    }
+  }
+
+  function mousePressed() {
+    if (hoveredIndex < 0) return;
+    const c = circles[hoveredIndex];
+    if (!c.visible) return;
+    const row = rowsData[c.rowIndex];
+    if (row && row.url) {
+      window.open(row.url, "_blank");
+    }
+  }
+</script>
+</body>
+</html>

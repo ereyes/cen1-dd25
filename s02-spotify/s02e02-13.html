@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Spotify 900</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont,
+                   "Segoe UI", Roboto, sans-serif;
+      /* fallback gradient while p5 loads */
+      background: radial-gradient(circle at center, #000000 0%, #666666 100%);
+      color: #eee;
+    }
+    canvas {
+      display: block;
+    }
+    #header {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+    #docTitle {
+      font-weight: 600;
+      font-size: 18px;
+      letter-spacing: 0.03em;
+    }
+    #controls label {
+      font-size: 12px;
+      margin-right: 4px;
+    }
+    #sizeMetric {
+      font-size: 12px;
+      padding: 3px 6px;
+      border-radius: 4px;
+      border: 1px solid #555;
+      background: #222;
+      color: #eee;
+    }
+    #sizeMetric:disabled {
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <div id="docTitle">
+    Spotify 900
+    <p>This is a text.</p>
+</div>
+  <div id="controls">
+    <label for="sizeMetric">Circle size:</label>
+    <select id="sizeMetric">
+      <option value="danceability">danceability</option>
+      <option value="loudness">loudness</option>
+      <option value="speechiness">speechiness</option>
+      <option value="acousticness">acousticness</option>
+      <option value="liveness">liveness</option>
+      <option value="valence">valence</option>
+      <option value="tempo">tempo</option>
+      <option value="duration_ms">duration_ms</option>
+    </select>
+  </div>
+</div>
+
+<script>
+  let canvas;
+  let rowsData = [];
+  let circles = [];
+  let hoveredIndex = -1;
+
+  // metrics that can drive circle size
+  const SIZE_METRICS = [
+    "danceability",
+    "loudness",
+    "speechiness",
+    "acousticness",
+    "liveness",
+    "valence",
+    "tempo",
+    "duration_ms"
+  ];
+  let currentSizeMetric = "danceability";
+  let featureRanges = {};  // metric -> {min, max}
+
+  // Circle size normalized to min(width, height)
+  const MIN_SIZE_NORM = 0.004; // ~4px at 1000px
+  const MAX_SIZE_NORM = 0.02;  // ~20px at 1000px
+
+  // Keep everything away from edges in normalized space
+  const MARGIN_NORM = 0.06;
+
+  // Extra spacing between circles (normalized)
+  const CUSHION_NORM = 0.0015;
+
+  // Tempo range used for pulsing
+  let tempoMin = 0;
+  let tempoMax = 1;
+
+  // Fixed genre colors (HSB)
+  const GENRE_STYLES = {
+    "Pop":  { h: 330, s: 80, b: 100 }, // pink
+    "Rap":  { h: 30,  s: 80, b: 65  }, // brownish
+    "Latin":{ h: 50,  s: 90, b: 100 }, // yellow
+    "R&b":  { h: 210, s: 80, b: 100 }, // blue
+    "Rock": { h: 0,   s: 90, b: 100 }, // red
+    "Edm":  { h: 0,   s: 0,  b: 70  }  // gray
+  };
+
+  const LEGEND_ORDER = ["Pop", "Rap", "Latin", "R&b", "Rock", "Edm"];
+
+  // Count per genre (for legend + cluster sizing)
+  let genreCount = {
+    "Pop": 0,
+    "Rap": 0,
+    "Latin": 0,
+    "R&b": 0,
+    "Rock": 0,
+    "Edm": 0
+  };
+
+  // Layout: genre -> center + spread (normalized)
+  let genreCenters = {};   // { genre: {nx, ny} }
+  let clusterSpread = {};  // { genre: spreadRadius }
+
+  function setup() {
+    canvas = createCanvas(windowWidth, windowHeight);
+    canvas.drop(handleFile);
+    colorMode(HSB, 360, 100, 100, 100);
+
+    const select = document.getElementById("sizeMetric");
+    if (select) {
+      select.value = currentSizeMetric;
+      select.addEventListener("change", () => {
+        currentSizeMetric = select.value;
+        if (rowsData.length > 0) {
+          generateCirclesFromData();
+        }
+      });
+    }
+  }
+
+  function draw() {
+    // Radial gradient background (black center -> dark gray edges)
+    const ctx = drawingContext;
+    const radius = Math.max(width, height);
+    const gradient = ctx.createRadialGradient(
+      width / 2, height / 2, 0,
+      width / 2, height / 2, radius
+    );
+    gradient.addColorStop(0, "#000000");
+    gradient.addColorStop(1, "#666666");
+    ctx.save();
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+
+    if (!circles.length) {
+      drawInstructions();
+      return;
+    }
+
+    const t = millis() / 1000.0;
+    const sizeScale = Math.min(width, height) || 1;
+
+    hoveredIndex = -1;
+    let closestDistSq = Infinity;
+
+    // 1) Compute pixel positions, animated diameter, and hover
+    for (let i = 0; i < circles.length; i++) {
+      const c = circles[i];
+
+      c.x = c.nx * width;
+      c.y = c.ny * height;
+
+      const baseD = c.dNorm * sizeScale;
+      const speed = 0.5 + c.tempoNorm * 2.0; // faster tempo => faster pulse
+      const pulse = Math.sin(TWO_PI * speed * t + c.phase);
+      const amp = 0.18;
+      const d = baseD * (1 + amp * pulse);
+
+      c.baseD = baseD;
+      c.currentD = d;
+
+      const dx = mouseX - c.x;
+      const dy = mouseY - c.y;
+      const distSq = dx * dx + dy * dy;
+      const radiusPx = d / 2;
+
+      if (distSq < radiusPx * radiusPx && distSq < closestDistSq) {
+        closestDistSq = distSq;
+        hoveredIndex = i;
+      }
+    }
+
+    // 2) Draw circles (hovered on top)
+    for (let i = 0; i < circles.length; i++) {
+      const c = circles[i];
+      const d = c.currentD;
+
+      if (i === hoveredIndex) continue;
+      noStroke();
+      fill(c.h, c.s, c.b, 70);
+      circle(c.x, c.y, d);
+    }
+
+    if (hoveredIndex >= 0) {
+      const c = circles[hoveredIndex];
+      stroke(0, 0, 100, 90);
+      strokeWeight(1.2);
+      fill(c.h, c.s, c.b, 90);
+      circle(c.x, c.y, c.currentD * 1.08);
+      noStroke();
+      cursor("pointer");
+    } else {
+      cursor("default");
+    }
+
+    drawOverlay();
+    drawLegend();
+    drawTooltip();
+  }
+
+  function drawInstructions() {
+    fill(0, 0, 90);
+    textAlign(CENTER, CENTER);
+    textSize(24);
+    text("Drop a CSV file onto the screen", width / 2, height / 2 - 20);
+    textSize(14);
+    text("Color = playlist_genre · Size = metric · Pulse = tempo", width / 2, height / 2 + 10);
+  }
+
+  function drawOverlay() {
+    const usedGenres = LEGEND_ORDER.filter(g => genreCount[g] > 0);
+    const gCount = usedGenres.length;
+
+    fill(0, 0, 100, 80);
+    textAlign(LEFT, BOTTOM);
+    textSize(12);
+
+    const line2 = `Size metric: ${currentSizeMetric} · Hover: details · Click: open spotify_url`;
+    const line1 = `Rows: ${rowsData.length}  |  Circles: ${circles.length}  |  Genres: ${gCount}`;
+
+    const y2 = height - 10;
+    const y1 = y2 - 16;
+
+    text(line1, 10, y1);
+    text(line2, 10, y2);
+  }
+
+  function drawLegend() {
+    const usedGenres = LEGEND_ORDER.filter(g => genreCount[g] > 0);
+    if (!usedGenres.length) return;
+
+    const x = width - 190;
+    const yStart = 20;
+    const swatchSize = 10;
+    const lineHeight = 16;
+    const boxHeight = usedGenres.length * lineHeight + 18;
+
+    noStroke();
+    fill(0, 0, 0, 160);
+    rect(x - 12, yStart - 12, 180, boxHeight, 6);
+
+    textAlign(LEFT, CENTER);
+    textSize(11);
+
+    for (let i = 0; i < usedGenres.length; i++) {
+      const g = usedGenres[i];
+      const style = GENRE_STYLES[g];
+      const yy = yStart + i * lineHeight;
+
+      fill(style.h, style.s, style.b, 90);
+      rect(x, yy - swatchSize / 2, swatchSize, swatchSize, 2);
+
+      fill(0, 0, 95, 100);
+      text(g, x + swatchSize + 6, yy);
+    }
+  }
+
+  function drawTooltip() {
+    if (hoveredIndex < 0) return;
+    const c = circles[hoveredIndex];
+    const row = rowsData[c.rowIndex];
+    if (!row) return;
+
+    const lines = [];
+    if (row.track)  lines.push(row.track);
+    if (row.artist) lines.push("by " + row.artist);
+    if (row.genre)  lines.push(row.genre);
+    if (row.tempo != null && !isNaN(row.tempo)) {
+      lines.push("Tempo: " + Math.round(row.tempo) + " BPM");
+    }
+    if (typeof row.danceability === "number") {
+      lines.push("Danceability: " + row.danceability.toFixed(2));
+    }
+    lines.push("Size metric: " + currentSizeMetric);
+
+    textSize(12);
+    textAlign(LEFT, TOP);
+
+    const padding = 8;
+    const lineHeight = 14;
+    let w = 0;
+    for (let l of lines) w = Math.max(w, textWidth(l));
+    const h = lines.length * lineHeight + padding * 2;
+
+    let x = mouseX + 16;
+    let y = mouseY + 16;
+
+    if (x + w + padding * 2 > width) {
+      x = width - w - padding * 2 - 10;
+    }
+    if (y + h > height) {
+      y = height - h - 10;
+    }
+
+    noStroke();
+    fill(0, 0, 0, 210);
+    rect(x, y, w + padding * 2, h, 6);
+
+    fill(0, 0, 100, 100);
+    let ty = y + padding;
+    for (let l of lines) {
+      text(l, x + padding, ty);
+      ty += lineHeight;
+    }
+  }
+
+  function windowResized() {
+    resizeCanvas(windowWidth, windowHeight);
+  }
+
+  function handleFile(file) {
+    if (file.type === "text") {
+      parseCSV(file.data);
+    } else {
+      console.log("Not a text/CSV file");
+    }
+  }
+
+  function parseCSV(csvText) {
+    const lines = csvText
+      .trim()
+      .split(/\r?\n/)
+      .filter(l => l.trim().length > 0);
+
+    if (lines.length < 2) {
+      console.warn("CSV has no data rows.");
+      return;
+    }
+
+    const firstLine = lines[0];
+    const delimiter =
+      firstLine.split(";").length > firstLine.split(",").length ? ";" : ",";
+
+    const headers = firstLine.split(delimiter).map(h => h.trim());
+
+    const genreIndex  = headers.indexOf("playlist_genre");
+    const artistIndex = headers.indexOf("artist_name");
+    const trackIndex  = headers.indexOf("track_name");
+    const urlIndex    = headers.indexOf("spotify_url");
+
+    if (genreIndex === -1) {
+      console.warn("CSV must contain playlist_genre column.");
+      return;
+    }
+
+    const metricIndices = {};
+    SIZE_METRICS.forEach(metric => {
+      metricIndices[metric] = headers.indexOf(metric);
+    });
+
+    rowsData = [];
+    circles = [];
+    featureRanges = {};
+    hoveredIndex = -1;
+    tempoMin = 0;
+    tempoMax = 1;
+
+    // reset genre counts
+    genreCount = { "Pop":0, "Rap":0, "Latin":0, "R&b":0, "Rock":0, "Edm":0 };
+
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(delimiter);
+      if (parts.length < headers.length) continue;
+
+      const rawGenre = (parts[genreIndex] || "").trim();
+      const canonical = canonicalGenre(rawGenre);
+      if (!canonical) continue; // skip non-canonical genres
+
+      const artist =
+        (artistIndex !== -1 && parts[artistIndex]) ? parts[artistIndex].trim() : "";
+      const track =
+        (trackIndex  !== -1 && parts[trackIndex])  ? parts[trackIndex].trim()  : "";
+      const url =
+        (urlIndex    !== -1 && parts[urlIndex])    ? parts[urlIndex].trim()    : "";
+
+      const row = { genre: canonical, artist, track, url };
+
+      // parse all metrics
+      for (const metric of SIZE_METRICS) {
+        const idx = metricIndices[metric];
+        let val = null;
+        if (idx !== -1 && parts[idx] !== undefined) {
+          const rawVal = parts[idx].trim();
+          if (rawVal !== "") {
+            const num = parseFloat(rawVal);
+            if (!isNaN(num)) {
+              val = num;
+              if (!featureRanges[metric]) {
+                featureRanges[metric] = { min: num, max: num };
+              } else {
+                featureRanges[metric].min = Math.min(featureRanges[metric].min, num);
+                featureRanges[metric].max = Math.max(featureRanges[metric].max, num);
+              }
+            }
+          }
+        }
+        row[metric] = val;
+      }
+
+      // convenience alias
+      row.danceability = row.danceability != null ? row.danceability : row.danceability;
+
+      rowsData.push(row);
+      genreCount[canonical] = (genreCount[canonical] || 0) + 1;
+    }
+
+    if (!rowsData.length) {
+      console.warn("No valid rows after filtering.");
+      return;
+    }
+
+    // derive tempo range for animation
+    if (featureRanges["tempo"] &&
+        isFinite(featureRanges["tempo"].min) &&
+        isFinite(featureRanges["tempo"].max) &&
+        featureRanges["tempo"].max > featureRanges["tempo"].min) {
+      tempoMin = featureRanges["tempo"].min;
+      tempoMax = featureRanges["tempo"].max;
+    } else {
+      tempoMin = 0;
+      tempoMax = 1;
+    }
+
+    updateMetricDropdown();
+    computeGenreCenters();
+    generateCirclesFromData();
+  }
+
+  function updateMetricDropdown() {
+    const select = document.getElementById("sizeMetric");
+    if (!select) return;
+
+    let hasCurrent = false;
+    for (let i = 0; i < select.options.length; i++) {
+      const opt = select.options[i];
+      const metric = opt.value;
+      const range = featureRanges[metric];
+      const available = !!(range && isFinite(range.min) && isFinite(range.max));
+      opt.disabled = !available;
+      if (available && metric === currentSizeMetric) {
+        hasCurrent = true;
+      }
+    }
+
+    if (!hasCurrent) {
+      for (let i = 0; i < select.options.length; i++) {
+        const opt = select.options[i];
+        if (!opt.disabled) {
+          currentSizeMetric = opt.value;
+          select.value = currentSizeMetric;
+          break;
+        }
+      }
+    }
+  }
+
+  function canonicalGenre(raw) {
+    if (!raw) return null;
+    const g = raw.trim().toLowerCase();
+
+    if (g === "pop")   return "Pop";
+    if (g === "rap")   return "Rap";
+    if (g === "latin") return "Latin";
+    if (g === "r&b" || g === "rnb" || g === "r&b;") return "R&b";
+    if (g === "rock")  return "Rock";
+    if (g === "edm")   return "Edm";
+
+    return null;
+  }
+
+  function getMetricNorm(row, metric) {
+    const v = row[metric];
+    const range = featureRanges[metric];
+    if (v == null || !range) return 0.5;
+    const minV = range.min;
+    const maxV = range.max;
+    if (!isFinite(minV) || !isFinite(maxV) || maxV <= minV) return 0.5;
+    const norm = (v - minV) / (maxV - minV);
+    return Math.max(0, Math.min(1, norm));
+  }
+
+  function computeGenreCenters() {
+    genreCenters = {};
+    clusterSpread = {};
+
+    const usedGenres = LEGEND_ORDER.filter(g => genreCount[g] > 0);
+    const n = usedGenres.length;
+    if (!n) return;
+
+    const cx = 0.5;
+    const cy = 0.5;
+
+    if (n === 1) {
+      genreCenters[usedGenres[0]] = { nx: cx, ny: cy };
+      clusterSpread[usedGenres[0]] = 0.14;
+      return;
+    }
+
+    const centerRadius = 0.24;
+    const baseSpreadMin = 0.11;
+    const baseSpreadMax = 0.16;
+
+    let maxCount = 0;
+    for (let g of usedGenres) {
+      if (genreCount[g] > maxCount) maxCount = genreCount[g];
+    }
+    if (maxCount < 1) maxCount = 1;
+
+    const step = TWO_PI / n;
+
+    for (let i = 0; i < n; i++) {
+      const g = usedGenres[i];
+      const angle = i * step;
+
+      let nx = cx + centerRadius * Math.cos(angle);
+      let ny = cy + centerRadius * Math.sin(angle);
+
+      nx = constrain(nx, MARGIN_NORM + baseSpreadMax, 1 - MARGIN_NORM - baseSpreadMax);
+      ny = constrain(ny, MARGIN_NORM + baseSpreadMax, 1 - MARGIN_NORM - baseSpreadMax);
+
+      genreCenters[g] = { nx, ny };
+
+      const f = genreCount[g] / maxCount;
+      clusterSpread[g] = baseSpreadMin + f * (baseSpreadMax - baseSpreadMin);
+    }
+  }
+
+  function generateCirclesFromData() {
+    circles = [];
+
+    const usedGenres = LEGEND_ORDER.filter(g => genreCount[g] > 0);
+    if (!usedGenres.length) return;
+
+    for (let i = 0; i < rowsData.length; i++) {
+      const row = rowsData[i];
+      const center = genreCenters[row.genre] || { nx: 0.5, ny: 0.5 };
+      const spread = clusterSpread[row.genre] || 0.13;
+      const style = GENRE_STYLES[row.genre];
+
+      const sizeNorm = getMetricNorm(row, currentSizeMetric);
+      const dNorm = MIN_SIZE_NORM + sizeNorm * (MAX_SIZE_NORM - MIN_SIZE_NORM);
+
+      let tempoNorm = 0.5;
+      if (row.tempo != null && isFinite(row.tempo) && tempoMax > tempoMin) {
+        tempoNorm = (row.tempo - tempoMin) / (tempoMax - tempoMin);
+        tempoNorm = Math.max(0, Math.min(1, tempoNorm));
+      }
+
+      const spreadR = spread;
+      let nx = center.nx;
+      let ny = center.ny;
+
+      // initial uniform sampling over cluster disk
+      const angle = random(TWO_PI);
+      const rNorm = spreadR * Math.sqrt(random());
+      nx = center.nx + rNorm * Math.cos(angle);
+      ny = center.ny + rNorm * Math.sin(angle);
+
+      circles.push({
+        nx,
+        ny,
+        cx: center.nx,
+        cy: center.ny,
+        spread: spreadR,
+        dNorm,
+        tempoNorm,
+        phase: random(TWO_PI),
+        h: style.h,
+        s: style.s,
+        b: style.b,
+        rowIndex: i
+      });
+    }
+
+    relaxCircles(8);
+  }
+
+  function relaxCircles(iterations) {
+    const n = circles.length;
+    if (n <= 1) return;
+
+    const centerPull = 0.03;
+
+    for (let it = 0; it < iterations; it++) {
+      // Pairwise repulsion
+      for (let i = 0; i < n; i++) {
+        const a = circles[i];
+        for (let j = i + 1; j < n; j++) {
+          const b = circles[j];
+
+          let dx = b.nx - a.nx;
+          let dy = b.ny - a.ny;
+          const distSq = dx * dx + dy * dy;
+
+          const minDist = (a.dNorm + b.dNorm) * 0.5 + CUSHION_NORM;
+          const minDistSq = minDist * minDist;
+
+          if (distSq < minDistSq && distSq > 0) {
+            const dist = Math.sqrt(distSq);
+            const overlap = (minDist - dist) * 0.5;
+            const ux = dx / dist;
+            const uy = dy / dist;
+
+            a.nx -= ux * overlap;
+            a.ny -= uy * overlap;
+            b.nx += ux * overlap;
+            b.ny += uy * overlap;
+          }
+        }
+      }
+
+      // Attraction back to cluster & clamping
+      for (let k = 0; k < n; k++) {
+        const c = circles[k];
+
+        const dxC = c.cx - c.nx;
+        const dyC = c.cy - c.ny;
+        c.nx += dxC * centerPull;
+        c.ny += dyC * centerPull;
+
+        const dx2 = c.nx - c.cx;
+        const dy2 = c.ny - c.cy;
+        const distC = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+        const maxR = c.spread;
+        if (distC > maxR && distC > 0) {
+          const scale = maxR / distC;
+          c.nx = c.cx + dx2 * scale;
+          c.ny = c.cy + dy2 * scale;
+        }
+
+        c.nx = Math.max(MARGIN_NORM, Math.min(1 - MARGIN_NORM, c.nx));
+        c.ny = Math.max(MARGIN_NORM, Math.min(1 - MARGIN_NORM, c.ny));
+      }
+    }
+  }
+
+  function mousePressed() {
+    if (hoveredIndex < 0) return;
+    const c = circles[hoveredIndex];
+    const row = rowsData[c.rowIndex];
+    if (row && row.url) {
+      window.open(row.url, "_blank");
+    }
+  }
+</script>
+</body>
+</html>
