@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BU P8 – Tableau de bord des emprunts</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f6f8;
+      --card: #ffffff;
+      --text: #1f1f28;
+      --muted: #5b6078;
+      --accent: #4f46e5;
+      --grid: #e5e7eb;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    header {
+      padding: 32px 6vw 12px;
+    }
+
+    h1 { margin: 0 0 4px; font-size: clamp(28px, 4vw, 36px); }
+    p.lead { margin: 4px 0 0; color: var(--muted); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 18px;
+      padding: 0 6vw 32px;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 16px 16px 12px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
+      border: 1px solid var(--grid);
+    }
+
+    .card h2 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 0;
+    }
+
+    svg { width: 100%; height: 260px; }
+
+    .chart-horizontal svg { height: 360px; }
+
+    .legend {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 6px 0 2px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      background: #eef2ff;
+      color: #312e81;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .source {
+      padding: 0 6vw 30px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>BU P8 – Analyse des emprunts</h1>
+    <p class="lead">Tableau de bord construit à partir du fichier CSV fourni. Toutes les vues sont calculées côté client.</p>
+  </header>
+
+  <section class="grid">
+    <article class="card" id="monthly-card">
+      <h2>Activité mensuelle <span class="badge" id="period"></span></h2>
+      <p class="small">Nombre d'emprunts par mois (Date début emprunt &ge; septembre 2024).</p>
+      <div id="monthly-chart"></div>
+    </article>
+
+    <article class="card">
+      <h2>Jours de la semaine</h2>
+      <p class="small">Volume d'emprunts par jour (Date début emprunt).</p>
+      <div id="weekday-chart"></div>
+    </article>
+
+    <article class="card">
+      <h2>Catégorie d'emprunteur</h2>
+      <p class="small">Répartition des emprunts par catégorie.</p>
+      <div id="category-chart" class="chart-horizontal"></div>
+    </article>
+
+    <article class="card">
+      <h2>Salles / secteurs</h2>
+      <p class="small">Classement des secteurs (rayons) par volume.</p>
+      <div id="rayon-chart" class="chart-horizontal"></div>
+    </article>
+
+    <article class="card">
+      <h2>Auteurs les plus empruntés</h2>
+      <p class="small">Top 10 tous emprunts confondus.</p>
+      <div id="author-chart" class="chart-horizontal"></div>
+    </article>
+
+    <article class="card">
+      <h2>Titres les plus empruntés depuis sept. 2024</h2>
+      <p class="small">Top 10 filtré sur Date début emprunt &ge; 2024-09-01.</p>
+      <div id="title-chart" class="chart-horizontal"></div>
+    </article>
+  </section>
+
+  <p class="source">Données : « bu_p8-data - data_bu_p8-min.csv ». Les calculs sont effectués dans le navigateur via D3.js.</p>
+
+  <script>
+    const csvPath = './bu_p8-data - data_bu_p8-min.csv';
+    const parseDate = (value) => {
+      const d = new Date(value);
+      return isNaN(d) ? null : d;
+    };
+
+    const monthFormatter = d3.timeFormat('%Y-%m');
+    const monthLabel = d3.timeFormat('%b %Y');
+    const startFilter = new Date('2024-09-01T00:00:00Z');
+
+    const weekdayNames = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+    const palette = ['#4f46e5', '#22c55e', '#f97316', '#06b6d4', '#a855f7', '#f43f5e', '#0ea5e9', '#84cc16', '#eab308', '#ec4899'];
+
+    function toCounts(data, accessor) {
+      const map = new Map();
+      data.forEach((d) => {
+        const key = accessor(d);
+        if (!key) return;
+        map.set(key, (map.get(key) || 0) + 1);
+      });
+      return Array.from(map, ([label, value]) => ({ label, value }));
+    }
+
+    function renderBarChart(containerId, data, { orientation = 'vertical', height = 260, maxBars = null, valueFormatter = (v) => v.toLocaleString() } = {}) {
+      const container = d3.select(containerId);
+      container.selectAll('*').remove();
+      if (!data.length) {
+        container.append('p').attr('class', 'small').text('Aucune donnée.');
+        return;
+      }
+
+      const trimmed = maxBars ? data.slice(0, maxBars) : data;
+      const margin = { top: 10, right: 12, bottom: 36, left: 120 };
+      const width = container.node().clientWidth || 360;
+      const innerHeight = height - margin.top - margin.bottom;
+      const innerWidth = width - margin.left - margin.right;
+
+      const svg = container.append('svg')
+        .attr('width', width)
+        .attr('height', height);
+
+      const chart = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+      if (orientation === 'horizontal') {
+        const y = d3.scaleBand()
+          .domain(trimmed.map(d => d.label))
+          .range([0, innerHeight])
+          .padding(0.2);
+        const x = d3.scaleLinear()
+          .domain([0, d3.max(trimmed, d => d.value)])
+          .nice()
+          .range([0, innerWidth]);
+
+        chart.selectAll('rect')
+          .data(trimmed)
+          .join('rect')
+          .attr('x', 0)
+          .attr('y', d => y(d.label))
+          .attr('height', y.bandwidth())
+          .attr('width', d => x(d.value))
+          .attr('fill', (d, i) => palette[i % palette.length]);
+
+        chart.append('g')
+          .call(d3.axisLeft(y).tickSize(0))
+          .selectAll('text')
+          .style('font-size', '12px');
+
+        chart.append('g')
+          .attr('transform', `translate(0,${innerHeight})`)
+          .call(d3.axisBottom(x).ticks(5).tickFormat(valueFormatter))
+          .selectAll('text')
+          .style('font-size', '12px');
+      } else {
+        const x = d3.scaleBand()
+          .domain(trimmed.map(d => d.label))
+          .range([0, innerWidth])
+          .padding(0.2);
+        const y = d3.scaleLinear()
+          .domain([0, d3.max(trimmed, d => d.value)])
+          .nice()
+          .range([innerHeight, 0]);
+
+        chart.selectAll('rect')
+          .data(trimmed)
+          .join('rect')
+          .attr('x', d => x(d.label))
+          .attr('y', d => y(d.value))
+          .attr('width', x.bandwidth())
+          .attr('height', d => innerHeight - y(d.value))
+          .attr('fill', (d, i) => palette[i % palette.length]);
+
+        chart.append('g')
+          .attr('transform', `translate(0,${innerHeight})`)
+          .call(d3.axisBottom(x))
+          .selectAll('text')
+          .attr('transform', 'rotate(-35)')
+          .style('text-anchor', 'end')
+          .style('font-size', '12px');
+
+        chart.append('g')
+          .call(d3.axisLeft(y).ticks(5).tickFormat(valueFormatter))
+          .selectAll('text')
+          .style('font-size', '12px');
+      }
+    }
+
+    function prepareMonthly(data) {
+      const filtered = data.filter(d => d.issuedate >= startFilter);
+      const monthMap = new Map();
+      filtered.forEach(d => {
+        const firstDay = new Date(Date.UTC(d.issuedate.getUTCFullYear(), d.issuedate.getUTCMonth(), 1));
+        const key = monthFormatter(firstDay);
+        monthMap.set(key, (monthMap.get(key) || 0) + 1);
+      });
+      const ordered = Array.from(monthMap, ([key, value]) => ({ key, value, date: new Date(key + '-01') }))
+        .sort((a, b) => a.date - b.date);
+      return ordered.map(d => ({ label: monthLabel(d.date), value: d.value }));
+    }
+
+    function prepareWeekdays(data) {
+      const counts = toCounts(data, d => {
+        if (!d.issuedate) return null;
+        return weekdayNames[d.issuedate.getDay()];
+      });
+      const order = new Map(weekdayNames.map((d, i) => [d, i]));
+      return counts.sort((a, b) => order.get(a.label) - order.get(b.label));
+    }
+
+    function prepareTop(data, field, limit = 10, minDate = null) {
+      const scoped = minDate ? data.filter(d => d.issuedate && d.issuedate >= minDate) : data;
+      return toCounts(scoped, d => (d[field] || '').trim())
+        .filter(d => d.label)
+        .sort((a, b) => b.value - a.value)
+        .slice(0, limit);
+    }
+
+    function initialize() {
+      d3.csv(csvPath, d => ({
+        author: d.author,
+        title: d.title,
+        rayon: d.rayon,
+        cat_emprenteur: d.cat_emprenteur,
+        ufr_emprenteur: d.ufr_emprenteur,
+        issuedate: parseDate(d.issuedate),
+        date_due: parseDate(d.date_due)
+      })).then(rows => {
+        const clean = rows.filter(d => d.issuedate);
+        const monthly = prepareMonthly(clean);
+        const weekdays = prepareWeekdays(clean);
+        const categories = prepareTop(clean, 'cat_emprenteur', null);
+        const rayons = prepareTop(clean, 'rayon', null);
+        const authors = prepareTop(clean, 'author', 10);
+        const titles = prepareTop(clean, 'title', 10, startFilter);
+
+        const earliest = monthly.length ? monthly[0].label : 'n.d.';
+        const latest = monthly.length ? monthly[monthly.length - 1].label : 'n.d.';
+        d3.select('#period').text(`de ${earliest} à ${latest}`);
+
+        renderBarChart('#monthly-chart', monthly, { orientation: 'vertical', height: 280 });
+        renderBarChart('#weekday-chart', weekdays, { orientation: 'vertical', height: 260 });
+        renderBarChart('#category-chart', categories, { orientation: 'horizontal', height: 320, valueFormatter: d3.format('~s') });
+        renderBarChart('#rayon-chart', rayons, { orientation: 'horizontal', height: 360, valueFormatter: d3.format('~s') });
+        renderBarChart('#author-chart', authors, { orientation: 'horizontal', height: 360, valueFormatter: d3.format('~s') });
+        renderBarChart('#title-chart', titles, { orientation: 'horizontal', height: 420, valueFormatter: d3.format('~s') });
+      }).catch(err => {
+        console.error('Erreur lors du chargement des données', err);
+        d3.select('body').append('p').text('Impossible de charger le CSV.');
+      });
+    }
+
+    initialize();
+  </script>
+</body>
+</html>
